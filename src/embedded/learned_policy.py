@@ -14,10 +14,7 @@ class LearnedPolicy(Policy):
     """
 
     def __init__(self):
-        raise NotImplementedError(
-            "LearnedPolicy is not implemented yet. "
-            "Set POLICY = 'greedy' in embedded/main.py."
-        )
+        raise NotImplementedError("LearnedPolicy is not implemented yet. Set POLICY = 'greedy' in embedded/main.py.")
 
     def decide(self, engine):
         raise NotImplementedError

@@ -76,8 +76,7 @@ class SnakeEngine:
         return False, 0, self.score
 
     def _place_food(self):
-        free = [(x, y) for x in range(self.size) for y in range(self.size)
-                if (x, y) not in self.snake]
+        free = [(x, y) for x in range(self.size) for y in range(self.size) if (x, y) not in self.snake]
         if not free:
             self.game_over = True
             self.food = self.head

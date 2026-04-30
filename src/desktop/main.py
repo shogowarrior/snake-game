@@ -143,6 +143,7 @@ def play(learning, py_ui):
             print("Final Score", engine.score)
             if py_ui:
                 import pygame
+
                 pygame.quit()
             return
 

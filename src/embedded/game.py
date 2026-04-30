@@ -40,10 +40,7 @@ class SnakeGame:
 
     def __init__(self, policy_name="greedy", speed=DEFAULT_SPEED):
         if policy_name not in _POLICIES:
-            raise ValueError(
-                "Unknown policy: " + repr(policy_name)
-                + ". Valid: " + ", ".join(sorted(_POLICIES))
-            )
+            raise ValueError("Unknown policy: " + repr(policy_name) + ". Valid: " + ", ".join(sorted(_POLICIES)))
 
         self.engine = SnakeEngine(size=GAME_SIZE)
         self.policy = _POLICIES[policy_name]()
@@ -52,7 +49,7 @@ class SnakeGame:
         # Per-game single-hue palette.
         self.base_hue = random()
         self.start_color = hsv_to_rgb(self.base_hue, 1.0, 0.15)  # dim tail
-        self.end_color = hsv_to_rgb(self.base_hue, 1.0, 0.70)   # bright head
+        self.end_color = hsv_to_rgb(self.base_hue, 1.0, 0.70)  # bright head
         self.food_color = self._new_food_color()
 
         reset_draw_caches()

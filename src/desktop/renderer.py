@@ -32,16 +32,19 @@ def update_ui(state, engine):
     state.display.fill(BLACK)
     fx, fy = engine.food
     pygame.draw.rect(
-        state.display, RED,
+        state.display,
+        RED,
         pygame.Rect(fx * BLOCK_SIZE, fy * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE),
     )
-    for (x, y) in engine.snake:
+    for x, y in engine.snake:
         pygame.draw.rect(
-            state.display, BLUE1,
+            state.display,
+            BLUE1,
             pygame.Rect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE),
         )
         pygame.draw.rect(
-            state.display, BLUE2,
+            state.display,
+            BLUE2,
             pygame.Rect(x * BLOCK_SIZE + 4, y * BLOCK_SIZE + 4, 12, 12),
         )
 
