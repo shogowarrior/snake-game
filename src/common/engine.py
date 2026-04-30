@@ -61,7 +61,8 @@ class SnakeEngine:
         dx, dy = _DELTAS[self.direction]
         new_head = ((x + dx) % self.size, (y + dy) % self.size)
 
-        if new_head in self.snake:
+        # Tail cell is about to vacate on this tick — exclude it so tail-following is legal.
+        if new_head in self.snake[:-1]:
             self.game_over = True
             return True, -10, self.score
 
