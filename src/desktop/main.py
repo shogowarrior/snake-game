@@ -17,8 +17,11 @@ LR = 0.001
 WINDOW_SIZE = 25
 GRID_SIZE = 16
 
-# RL training-stall guard: end the episode if the agent hasn't eaten in
-# 100 * len(snake) frames. Lives in the agent loop, not the engine.
+# RL training-stall guard: end the episode once total frames exceed
+# STALL_FACTOR * len(snake). This preserves the original behaviour
+# (`frame_iteration > 100 * len(snake)` from the old SnakeGame). It's a
+# rough "stuck game" detector — not a "frames since last food" timer.
+# Lives in the agent loop, not the engine.
 STALL_FACTOR = 100
 
 
