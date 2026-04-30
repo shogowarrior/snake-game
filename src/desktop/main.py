@@ -1,131 +1,68 @@
-import torch
-import csv
 import random
+import sqlite3
+from datetime import datetime
 
 import numpy as np
-import sqlite3
+import torch
 
-from collections import deque
-from datetime import datetime
 from common.direction import Direction
-
+from common.engine import SnakeEngine
 from desktop.model import Linear_QNet, QTrainer
 from desktop.plot import plot
-from desktop.renderer import render_info, update_ui
-from desktop.snake_game import Point, SnakeGame
+from desktop.renderer import init_pygame, render_info, update_ui
 
-# PLOT_SKIP = 2
 BATCH_SIZE = 100
 MAX_MEMORY = 100_000
 LR = 0.001
 WINDOW_SIZE = 25
+GRID_SIZE = 16
+
+# RL training-stall guard: end the episode if the agent hasn't eaten in
+# 100 * len(snake) frames. Lives in the agent loop, not the engine.
+STALL_FACTOR = 100
 
 
 class Agent:
-
     def __init__(self):
         self.n_games = 0
-        self.epsilon = 0  # randomness
-        self.gamma = 0.9  # discount rate
-        self.memory = [] #deque(maxlen=MAX_MEMORY)  # popleft()
-        self.model = Linear_QNet(11, 256, 3)
+        self.epsilon = 0
+        self.gamma = 0.9
+        self.memory = []
+        self.model = Linear_QNet(6, 256, 3)
         self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
 
-    def get_state(self, game):
-        head = game.snake[0]
-        length = len(game.snake)
-        point_l = Point(head.x - game.BLOCK_SIZE, head.y)
-        point_r = Point(head.x + game.BLOCK_SIZE, head.y)
-        point_u = Point(head.x, head.y - game.BLOCK_SIZE)
-        point_d = Point(head.x, head.y + game.BLOCK_SIZE)
-
-        dir_l = game.direction == Direction.LEFT
-        dir_r = game.direction == Direction.RIGHT
-        dir_u = game.direction == Direction.UP
-        dir_d = game.direction == Direction.DOWN
-
+    def get_state(self, engine):
+        head_x, head_y = engine.head
+        food_x, food_y = engine.food
         state = [
-            # # Danger straight
-            # (dir_r and game.is_collision(point_r))
-            # or (dir_l and game.is_collision(point_l))
-            # or (dir_u and game.is_collision(point_u))
-            # or (dir_d and game.is_collision(point_d)),
-            # # Danger right
-            # (dir_u and game.is_collision(point_r))
-            # or (dir_d and game.is_collision(point_l))
-            # or (dir_l and game.is_collision(point_u))
-            # or (dir_r and game.is_collision(point_d)),
-            # # Danger left
-            # (dir_d and game.is_collision(point_r))
-            # or (dir_u and game.is_collision(point_l))
-            # or (dir_r and game.is_collision(point_u))
-            # or (dir_l and game.is_collision(point_d)),
-            # Move direction
-            # dir_l,
-            # dir_r,
-            # dir_u,
-            # dir_d,
-            # game.food.x < game.head.x,  # food left
-            # game.food.x > game.head.x,  # food right
-            # game.food.y < game.head.y,  # food up
-            # game.food.y > game.head.y,  # food down
-            # Extra 5 states
-            game.direction,
-            game.food.x,
-            game.food.y,
-            game.head.x,
-            game.head.y,
-            length,
+            engine.direction,
+            food_x,
+            food_y,
+            head_x,
+            head_y,
+            len(engine.snake),
         ]
-        print(state)
-
         return np.array(state, dtype=int)
 
     def remember(self, state, action, reward, next_state, done):
-        self.memory.append((state, action, reward, next_state, done))  # popleft if MAX_MEMORY is reached
+        self.memory.append((state, action, reward, next_state, done))
 
     def train_long_memory(self):
         if len(self.memory) > BATCH_SIZE:
-            # mini_sample = self.memory[-BATCH_SIZE:]
-
-            # random batch sampling  of size BATCH_SIZE from MAX_MEMORY
             mini_sample = random.sample(self.memory, BATCH_SIZE)
         else:
             mini_sample = self.memory
 
         states, actions, rewards, next_states, dones = zip(*mini_sample)
         self.trainer.train_step(states, actions, rewards, next_states, dones)
-        # for state, action, reward, nexrt_state, done in mini_sample:
-        #    self.trainer.train_step(state, action, reward, next_state, done)
 
     def train_short_memory(self, state, action, reward, next_state, done):
         self.trainer.train_step(state, action, reward, next_state, done)
 
-    ## edited bvy dada
     def get_action(self, state):
-        # random moves: tradeoff exploration / exploitation
-        if self.n_games <= 500:
-            self.epsilon = min(1/np.log(self.n_games + 1), 0.2) # 80 - self.n_games
-        elif self.n_games > 500 and self.n_games <= 1000:
-            self.epsilon = min(1/np.log(self.n_games + 1), 0.15) # 80 - self.n_games
-        else:
-            self.epsilon = min(1/np.log(self.n_games + 1), 0.1) # 80 - self.n_games
-        final_move = [0, 0, 0]
-        if random.uniform(0, 1) < self.epsilon:
-            move = random.randint(0, 2)
-            final_move[move] = 1
-        else:
-            state0 = torch.tensor(state, dtype=torch.float)
-            prediction = self.model(state0)
-            move = torch.argmax(prediction).item()
-            final_move[move] = 1
-        return final_move
-
-    ## original
-    def get_action(self, state):
-        # random moves: tradeoff exploration / exploitation
+        # Exploration / exploitation: linear epsilon decay over the first ~80 games.
         self.epsilon = 80 - self.n_games
-        final_move = [0,0,0]
+        final_move = [0, 0, 0]
         if random.randint(0, 200) < self.epsilon:
             move = random.randint(0, 2)
             final_move[move] = 1
@@ -134,97 +71,127 @@ class Agent:
             prediction = self.model(state0)
             move = torch.argmax(prediction).item()
             final_move[move] = 1
-
         return final_move
 
-def play(learning, py_ui, led_matrix):
+
+def _action_to_direction(action, current_direction):
+    """Map a [straight, right, left] one-hot action to a Direction.
+
+    Direction is rotated relative to the current heading along the clockwise
+    cycle RIGHT -> DOWN -> LEFT -> UP -> RIGHT.
+    """
+    clock_wise = [Direction.RIGHT, Direction.DOWN, Direction.LEFT, Direction.UP]
+    idx = clock_wise.index(current_direction)
+    if np.array_equal(action, [1, 0, 0]):
+        return clock_wise[idx]
+    if np.array_equal(action, [0, 1, 0]):
+        return clock_wise[(idx + 1) % 4]
+    return clock_wise[(idx - 1) % 4]
+
+
+def _read_keyboard(pygame_state, current_direction):
+    """Drain the pygame event queue. Returns the new direction (or current)."""
+    import pygame
+
+    new_dir = current_direction
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            pygame.quit()
+            raise SystemExit(0)
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_LEFT:
+                new_dir = Direction.LEFT
+            elif event.key == pygame.K_RIGHT:
+                new_dir = Direction.RIGHT
+            elif event.key == pygame.K_UP:
+                new_dir = Direction.UP
+            elif event.key == pygame.K_DOWN:
+                new_dir = Direction.DOWN
+    return new_dir
+
+
+def play(learning, py_ui):
     plot_scores = []
     plot_mean_scores = []
     moving_mean_scores = []
     total_score = 0
     record = 0
     agent = Agent()
-    game = SnakeGame(learning=learning, py_ui=py_ui, led_matrix=led_matrix)
-    
-    # Connect to SQLite database
+    engine = SnakeEngine(size=GRID_SIZE)
+    pygame_state = init_pygame(GRID_SIZE) if py_ui else None
+
     connection = sqlite3.connect("db/tests.sqlite")
     cursor = connection.cursor()
 
-    steps = 0
     while True:
-        if not game.learning:
-            # game loop
-            while True:
-                reward, game_over, score = game.play_step(action=None)
-                if game_over == True:
-                    break
-            print("Final Score", score)
+        if not learning:
+            # Human/keyboard mode: play a single game with UI updates each tick.
+            engine = SnakeEngine(size=GRID_SIZE)
+            while not engine.game_over:
+                if py_ui:
+                    new_dir = _read_keyboard(pygame_state, engine.direction)
+                    engine.set_direction(new_dir)
+                    engine.step()
+                    update_ui(pygame_state, engine)
+                    render_info(pygame_state, engine, record, agent.n_games)
+                    pygame_state.clock.tick(pygame_state.SPEED)
+                else:
+                    engine.step()
+            print("Final Score", engine.score)
             if py_ui:
-                game.quit()
+                import pygame
+                pygame.quit()
+            return
 
-        else:
+        # Learning mode.
+        state_old = agent.get_state(engine)
+        final_move = agent.get_action(state_old)
+        new_dir = _action_to_direction(final_move, engine.direction)
+        done, reward, score = engine.step(new_dir)
 
-            # load memory
-            # agent.model.load()
+        # Stall guard — externalised from the engine.
+        if not done and engine.frame > STALL_FACTOR * len(engine.snake):
+            done = True
+            reward = -10
+            engine.game_over = True
 
-            # get old state
-            state_old = agent.get_state(game)
+        state_new = agent.get_state(engine)
+        agent.train_short_memory(state_old, final_move, reward, state_new, done)
+        agent.remember(state_old, final_move, reward, state_new, done)
 
-            # get move
-            final_move = agent.get_action(state_old)
-
-            # perform move and get new state
-            reward, done, score = game.play_step(final_move)
-            state_new = agent.get_state(game)
-
-            # train short memory
-            # if steps % 8 == 0 and steps > 8:
-            #     agent.train_long_memory()
-            agent.train_short_memory(state_old, final_move, reward, state_new, done)
-
-            # remember
-            agent.remember(state_old, final_move, reward, state_new, done)
-
-            if done:
-                # train long memory, plot result
-                game.reset()
-                agent.n_games += 1
-                agent.train_long_memory()
-                steps = 0
-
-                if score > record:
-                    record = score
-                    agent.model.save()
-
-                #print("Game", agent.n_games, "Score", score, "Record:", record)
-                plot_scores.append(score)
-                total_score += score
-
-                # mean_score
-                mean_score = total_score / agent.n_games
-                plot_mean_scores.append(mean_score)
-
-                # moving average
-                window_size = WINDOW_SIZE if agent.n_games > WINDOW_SIZE else agent.n_games
-
-                moving_mean_score = sum(plot_scores[-window_size:])
-                moving_mean_scores.append(moving_mean_score/window_size)
-
-                # if agent.n_games % PLOT_SKIP == 0:
-                plot(plot_scores, plot_mean_scores, moving_mean_scores)
-
-                # Append data to CSV
-                with open("scores.csv", mode="a") as file:
-                    file.write(f"{agent.n_games},{datetime.now()},{score},N/A\n")
-
-                # send settings to sqlite for debugging
-                cursor.execute("INSERT INTO test_results (score, params) VALUES (?, ?)", (score, "N/A"))
-                connection.commit()
         if py_ui:
-            update_ui(game)
-            render_info(game, record, agent.n_games)
-    
+            update_ui(pygame_state, engine)
+            render_info(pygame_state, engine, record, agent.n_games)
+
+        if done:
+            engine = SnakeEngine(size=GRID_SIZE)
+            agent.n_games += 1
+            agent.train_long_memory()
+
+            if score > record:
+                record = score
+                agent.model.save()
+
+            plot_scores.append(score)
+            total_score += score
+            mean_score = total_score / agent.n_games
+            plot_mean_scores.append(mean_score)
+
+            window_size = WINDOW_SIZE if agent.n_games > WINDOW_SIZE else agent.n_games
+            moving_mean_score = sum(plot_scores[-window_size:])
+            moving_mean_scores.append(moving_mean_score / window_size)
+
+            plot(plot_scores, plot_mean_scores, moving_mean_scores)
+
+            with open("scores.csv", mode="a") as file:
+                file.write(f"{agent.n_games},{datetime.now()},{score},N/A\n")
+
+            cursor.execute("INSERT INTO test_results (score, params) VALUES (?, ?)", (score, "N/A"))
+            connection.commit()
+
+    # Unreachable in learning mode; cursor closes on exit.
     connection.close()
+
 
 if __name__ == "__main__":
     learning = True
