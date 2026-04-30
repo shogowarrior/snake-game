@@ -1,4 +1,5 @@
-from common import Direction
+from common.colors import hsv_to_rgb
+from common.direction import Direction
 from display import clear_screen, display_scores, NP, xy_to_index
 from random import randint
 from time import sleep

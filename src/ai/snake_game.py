@@ -2,7 +2,7 @@ import pygame
 import random
 from enum import Enum
 from collections import namedtuple
-from common import Direction
+from common.direction import Direction
 import numpy as np
 
 Point = namedtuple("Point", "x, y")
