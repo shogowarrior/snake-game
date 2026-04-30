@@ -1,6 +1,9 @@
-import neopixel #type: ignore
+from time import sleep
 
-from machine import Pin # type: ignore
+import neopixel  #type: ignore
+from machine import Pin  # type: ignore
+
+from common.colors import gradient_color
 
 WHITE = (128, 128, 128)
 BLACK = (0, 0, 0)
@@ -74,10 +77,11 @@ special_chars = {
 
 # Helper to convert (x, y) to NeoPixel index on a 16x16 grid
 def xy_to_index(x, y):
-    if x % 2 == 0:
-        return x * 16 + y  # Even rows (left to right)
-    else:
-        return x * 16 + (15 - y)  # Odd rows (right to left)
+    """(col, row) -> flat NeoPixel index, accounting for the panel's
+    serpentine wiring (every other physical row is laid out right-to-left)."""
+    if y % 2 == 0:
+        return y * 16 + x
+    return y * 16 + (15 - x)
 
 # Clear the screen
 def clear_screen():
@@ -127,3 +131,54 @@ def display_scores(high_score, current_score):
 
     display_message(high_score_message, 1, 2, GREEN)
     display_message(current_score_message,  1, 10, BLUE)
+
+
+# Render-loop caches. Module state, not class state — `display.py` owns the
+# only NeoPixel object and is the only place that draws.
+_prev_snake_cells = set()
+_gradient_colors = []
+_previous_snake_length = 0
+
+
+def draw_snake(engine, palette):
+    """Paint one frame: snake gradient + food cell. Sleeps for the engine tick.
+
+    palette is (start_color, end_color, food_color, speed) — provided by the
+    embedded SnakeGame each frame.
+    """
+    global _prev_snake_cells, _gradient_colors, _previous_snake_length  # noqa: PLW0603
+
+    start_color, end_color, food_color, speed = palette
+    cur = set(engine.snake)
+
+    snake_length = len(engine.snake)
+    if snake_length != _previous_snake_length:
+        _gradient_colors = [
+            gradient_color(i, snake_length, start_color, end_color)
+            for i in range(snake_length)
+        ]
+        _previous_snake_length = snake_length
+
+    # Clear cells that were snake last frame but aren't now.
+    for (x, y) in _prev_snake_cells - cur:
+        NP[xy_to_index(x, y)] = BLACK
+
+    # Repaint current snake cells.
+    for i, (x, y) in enumerate(engine.snake):
+        NP[xy_to_index(x, y)] = _gradient_colors[i]
+
+    # Food pixel.
+    fx, fy = engine.food
+    NP[xy_to_index(fx, fy)] = food_color
+
+    NP.write()
+    _prev_snake_cells = cur
+    sleep(1 / speed)
+
+
+def reset_draw_caches():
+    """Call between games so the new game's first frame redraws cleanly."""
+    global _prev_snake_cells, _gradient_colors, _previous_snake_length  # noqa: PLW0603
+    _prev_snake_cells = set()
+    _gradient_colors = []
+    _previous_snake_length = 0
