@@ -27,9 +27,10 @@ class GreedyPolicy(Policy):
             return min(d, size - d)
 
         candidates = []
+        # Exclude the tail cell — it vacates this tick, so tail-following is legal (matches SnakeEngine).
         for direction, (dx, dy) in _DELTAS.items():
             nx, ny = (head_x + dx) % size, (head_y + dy) % size
-            if (nx, ny) in snake:
+            if (nx, ny) in snake[:-1]:
                 continue
             dist = wrapped(nx, food_x) + wrapped(ny, food_y)
             candidates.append((dist, direction))
