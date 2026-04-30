@@ -1,7 +1,0 @@
-ipykernel
-matplotlib
-nbformat
-pandas
-pygame
-plotly==6.0.0rc0
-torch
