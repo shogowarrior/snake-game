@@ -7,7 +7,7 @@ import torch
 
 from common.direction import Direction
 from common.engine import SnakeEngine
-from desktop.model import Linear_QNet, QTrainer
+from desktop.model import LinearQNet, QTrainer
 from desktop.plot import plot
 from desktop.renderer import init_pygame, render_info, update_ui
 
@@ -31,7 +31,7 @@ class Agent:
         self.epsilon = 0
         self.gamma = 0.9
         self.memory = []
-        self.model = Linear_QNet(6, 256, 3)
+        self.model = LinearQNet(6, 256, 3)
         self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
 
     def get_state(self, engine):
