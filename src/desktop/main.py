@@ -7,10 +7,12 @@ import sqlite3
 
 from collections import deque
 from datetime import datetime
-from snake_game import SnakeGame, Direction, Point
-from model import Linear_QNet, QTrainer
-from helper import plot
-from ui import update_ui, render_info
+from common.direction import Direction
+
+from desktop.model import Linear_QNet, QTrainer
+from desktop.plot import plot
+from desktop.renderer import render_info, update_ui
+from desktop.snake_game import Point, SnakeGame
 
 # PLOT_SKIP = 2
 BATCH_SIZE = 100
