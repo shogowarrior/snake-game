@@ -77,9 +77,9 @@ special_chars = {
 
 
 # Game-space rotation. Change this to remount the panel in any of the four
-# right-angle orientations without touching the renderers. Score text is drawn
-# via panel_index and is unaffected — it always reads upright on the unrotated
-# panel.
+# right-angle orientations without touching the renderers. Snake, food, and
+# score all rotate together so the score reads upright in the same viewing
+# angle the user plays at.
 ORIENTATION = "90CW"  # "0" | "90CW" | "180" | "90CCW"
 
 
@@ -101,23 +101,15 @@ def xy_to_index(x, y):
     return py * 16 + (15 - px)
 
 
-def panel_index(px, py):
-    """Panel-natural (col, row) -> flat NeoPixel index. Serpentine only — no rotation.
-    Use for score / overlay text that should read upright on the unrotated panel."""
-    if py % 2 == 0:
-        return py * 16 + px
-    return py * 16 + (15 - px)
-
-
 # Clear the screen
 def clear_screen():
     NP.fill(BLACK)
     NP.write()
 
 
-# Score text is drawn in the panel's natural orientation (via panel_index)
-# so it's readable regardless of the game-space rotation in xy_to_index.
-# `scale` blows each pattern pixel up to a scale x scale block.
+# Score text rotates with the game (via xy_to_index) so it reads upright from
+# the same viewing angle the user plays at. `scale` blows each pattern pixel
+# up to a scale x scale block.
 def display_char(char, offset_x=0, offset_y=0, color=WHITE, scale=1):
     char = char.upper()
     pattern = characters.get(char) or digits.get(char) or special_chars.get(char)
@@ -129,10 +121,10 @@ def display_char(char, offset_x=0, offset_y=0, color=WHITE, scale=1):
         for col_idx, pixel in enumerate(row):
             for dx in range(scale):
                 for dy in range(scale):
-                    px = offset_x + col_idx * scale + dx
-                    py = offset_y + row_idx * scale + dy
-                    if 0 <= px < 16 and 0 <= py < 16:
-                        NP[panel_index(px, py)] = color if pixel else (0, 0, 0)
+                    x = offset_x + col_idx * scale + dx
+                    y = offset_y + row_idx * scale + dy
+                    if 0 <= x < 16 and 0 <= y < 16:
+                        NP[xy_to_index(x, y)] = color if pixel else (0, 0, 0)
 
 
 def display_message(message, offset_x=0, offset_y=0, color=WHITE, scale=1):
