@@ -46,17 +46,15 @@ class SnakeGame:
         self.policy = _POLICIES[policy_name]()
         self.speed = speed
 
-        # Per-game single-hue palette.
-        self.base_hue = random()
-        self.start_color = hsv_to_rgb(self.base_hue, 1.0, 0.15)  # dim tail
-        self.end_color = hsv_to_rgb(self.base_hue, 1.0, 0.70)  # bright head
+        # Per-game two-hue palette: start_color -> head (bright), end_color -> tail (dim).
+        self.start_color = hsv_to_rgb(random(), 1.0, uniform(0.55, 1.00))
+        self.end_color = hsv_to_rgb(random(), 1.0, uniform(0.08, 0.25))
         self.food_color = self._new_food_color()
 
         reset_draw_caches()
 
     def _new_food_color(self):
-        h = (self.base_hue + 0.5 + uniform(-0.05, 0.05)) % 1.0
-        return hsv_to_rgb(h, 1.0, 0.70)
+        return hsv_to_rgb(random(), 1.0, uniform(0.55, 0.85))
 
     def _palette(self):
         return (self.start_color, self.end_color, self.food_color, self.speed)
