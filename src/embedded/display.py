@@ -76,13 +76,26 @@ special_chars = {
 }
 
 
+# Game-space rotation. Change this to remount the panel in any of the four
+# right-angle orientations without touching the renderers. Score text is drawn
+# via panel_index and is unaffected — it always reads upright on the unrotated
+# panel.
+ORIENTATION = "90CW"  # "0" | "90CW" | "180" | "90CCW"
+
+
 # Coord -> flat NeoPixel index helpers for the 16x16 panel.
 # Both apply the same serpentine-wiring rule (odd physical rows run right-to-left);
 # they differ only in whether they rotate game-space first.
 def xy_to_index(x, y):
-    """Game-space (col, row) -> flat NeoPixel index. 90° CW rotation, then serpentine."""
-    px = 15 - y
-    py = x
+    """Game-space (col, row) -> flat NeoPixel index. ORIENTATION rotation, then serpentine."""
+    if ORIENTATION == "0":
+        px, py = x, y
+    elif ORIENTATION == "90CW":
+        px, py = 15 - y, x
+    elif ORIENTATION == "180":
+        px, py = 15 - x, 15 - y
+    else:  # "90CCW"
+        px, py = y, 15 - x
     if py % 2 == 0:
         return py * 16 + px
     return py * 16 + (15 - px)
