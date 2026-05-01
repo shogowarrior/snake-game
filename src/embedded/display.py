@@ -78,11 +78,13 @@ special_chars = {
 
 # Helper to convert (x, y) to NeoPixel index on a 16x16 grid
 def xy_to_index(x, y):
-    """(col, row) -> flat NeoPixel index, accounting for the panel's
-    serpentine wiring (every other physical row is laid out right-to-left)."""
-    if y % 2 == 0:
-        return y * 16 + x
-    return y * 16 + (15 - x)
+    """(col, row) -> flat NeoPixel index.
+    Applies 90° CCW rotation (px=y, py=15-x), then serpentine-row mapping."""
+    px = y
+    py = 15 - x
+    if py % 2 == 0:
+        return py * 16 + px
+    return py * 16 + (15 - px)
 
 
 # Clear the screen
@@ -102,13 +104,13 @@ def display_char(char, offset_x=0, offset_y=0, color=WHITE):
     # Iterate through each row and column in the pattern
     for row_idx, row in enumerate(pattern):
         for col_idx, pixel in enumerate(row):
-            x = offset_y + row_idx  # Vertical position (row)
-            y = offset_x + col_idx  # Horizontal position (column)
-            if 0 <= x < 16 and 0 <= y < 16:  # Ensure the pixel is within bounds
+            col = offset_x + col_idx
+            row_pos = offset_y + row_idx
+            if 0 <= col < 16 and 0 <= row_pos < 16:
                 if pixel == 1:
-                    NP[xy_to_index(x, y)] = color  # Set the pixel color
+                    NP[xy_to_index(col, row_pos)] = color
                 else:
-                    NP[xy_to_index(x, y)] = (0, 0, 0)  # Set the pixel to black (off)
+                    NP[xy_to_index(col, row_pos)] = (0, 0, 0)
 
 
 # Function to display a message
