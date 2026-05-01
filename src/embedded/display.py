@@ -76,16 +76,20 @@ special_chars = {
 }
 
 
-# Helper to convert (x, y) to NeoPixel index on a 16x16 grid
-def xy_to_index(x, y):
-    """(col, row) -> flat NeoPixel index.
-    Applies 90° CW rotation (px=15-y, py=x), then serpentine wiring
-    (odd physical rows run right-to-left)."""
-    px = 15 - y
-    py = x
+# Helpers to convert coordinates to NeoPixel indices on the 16x16 panel.
+def _physical_to_index(px, py):
+    """(panel_col, panel_row) -> flat NeoPixel index. Serpentine wiring only —
+    odd physical rows run right-to-left. Use this to draw in the panel's
+    natural orientation, bypassing the rotation in xy_to_index."""
     if py % 2 == 0:
         return py * 16 + px
     return py * 16 + (15 - px)
+
+
+def xy_to_index(x, y):
+    """(col, row) -> flat NeoPixel index for game-space drawing.
+    Applies 90° CW rotation (px=15-y, py=x), then serpentine wiring."""
+    return _physical_to_index(15 - y, x)
 
 
 # Clear the screen
@@ -103,15 +107,17 @@ def display_char(char, offset_x=0, offset_y=0, color=WHITE):
         return
 
     # Iterate through each row and column in the pattern
+    # Score text is drawn in the panel's natural orientation so it's readable
+    # regardless of the game-space rotation in xy_to_index.
     for row_idx, row in enumerate(pattern):
         for col_idx, pixel in enumerate(row):
-            col = offset_x + col_idx
-            row_pos = offset_y + row_idx
-            if 0 <= col < 16 and 0 <= row_pos < 16:
+            px = offset_x + col_idx
+            py = offset_y + row_idx
+            if 0 <= px < 16 and 0 <= py < 16:
                 if pixel == 1:
-                    NP[xy_to_index(col, row_pos)] = color
+                    NP[_physical_to_index(px, py)] = color
                 else:
-                    NP[xy_to_index(col, row_pos)] = (0, 0, 0)
+                    NP[_physical_to_index(px, py)] = (0, 0, 0)
 
 
 # Function to display a message
@@ -178,8 +184,9 @@ def draw_snake(engine, palette):
 
 
 def reset_draw_caches():
-    """Call between games so the new game's first frame redraws cleanly."""
+    """Call between games so the new game starts blank with fresh caches."""
     global _prev_snake_cells, _gradient_colors, _previous_snake_length  # noqa: PLW0603
     _prev_snake_cells = set()
     _gradient_colors = []
     _previous_snake_length = 0
+    clear_screen()
