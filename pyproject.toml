@@ -57,10 +57,6 @@ warn_unused_configs = true
 disallow_untyped_defs = false
 disable_error_code = ["import-untyped"]
 
-[[tool.mypy.overrides]]
-module = ["neopixel", "machine", "webrepl", "network"]
-ignore_missing_imports = true
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 junit_family = "xunit2"

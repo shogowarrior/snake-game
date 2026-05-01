@@ -1,12 +1,9 @@
 from game import SnakeGame
 
-# from wlan import start_wlan
-
 POLICY = "greedy"  # "greedy" | "learned"
 
 
 def run_game():
-    # start_wlan()
     while True:
         game = SnakeGame(policy_name=POLICY)
         game.start_game()
