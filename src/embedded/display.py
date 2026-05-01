@@ -139,12 +139,11 @@ def display_message(message, offset_x=0, offset_y=0, color=WHITE):
 # Display high score and current score together on the 16x16 grid, centered horizontally
 def display_scores(high_score, current_score):
     clear_screen()
-    # Create the score messages
-    high_score_message = f"H:{high_score}"
     current_score_message = f"C:{current_score}"
-
-    display_message(high_score_message, 1, 2, GREEN)
     display_message(current_score_message, 1, 10, BLUE)
+    # High score hidden for now — re-enable when layout is ready:
+    # high_score_message = f"H:{high_score}"
+    # display_message(high_score_message, 1, 2, GREEN)
 
 
 # Render-loop caches. Module state, not class state — `display.py` owns the
