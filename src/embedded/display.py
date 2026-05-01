@@ -115,47 +115,48 @@ def clear_screen():
     NP.write()
 
 
-# Function to display a single character
-def display_char(char, offset_x=0, offset_y=0, color=WHITE):
+# Score text is drawn in the panel's natural orientation (via panel_index)
+# so it's readable regardless of the game-space rotation in xy_to_index.
+# `scale` blows each pattern pixel up to a scale x scale block.
+def display_char(char, offset_x=0, offset_y=0, color=WHITE, scale=1):
     char = char.upper()
     pattern = characters.get(char) or digits.get(char) or special_chars.get(char)
 
     if pattern is None:
         return
 
-    # Iterate through each row and column in the pattern
-    # Score text is drawn in the panel's natural orientation so it's readable
-    # regardless of the game-space rotation in xy_to_index.
     for row_idx, row in enumerate(pattern):
         for col_idx, pixel in enumerate(row):
-            px = offset_x + col_idx
-            py = offset_y + row_idx
-            if 0 <= px < 16 and 0 <= py < 16:
-                if pixel == 1:
-                    NP[panel_index(px, py)] = color
-                else:
-                    NP[panel_index(px, py)] = (0, 0, 0)
+            for dx in range(scale):
+                for dy in range(scale):
+                    px = offset_x + col_idx * scale + dx
+                    py = offset_y + row_idx * scale + dy
+                    if 0 <= px < 16 and 0 <= py < 16:
+                        NP[panel_index(px, py)] = color if pixel else (0, 0, 0)
 
 
-# Function to display a message
-def display_message(message, offset_x=0, offset_y=0, color=WHITE):
-    # clear_screen()  # Clear the display first
-
+def display_message(message, offset_x=0, offset_y=0, color=WHITE, scale=1):
+    advance = 4 * scale  # 3-col glyph + 1-col padding, both scaled
     for char in message:
-        display_char(char, offset_x, offset_y, color)
-        offset_x += 4  # Move to the right after displaying each character (3 for char + 1 padding)
-        if offset_x >= 16:  # Stop if the next character would go out of bounds
+        display_char(char, offset_x, offset_y, color, scale)
+        offset_x += advance
+        if offset_x >= 16:
             break
-    NP.write()  # Send the data to the NeoPixel display
+    NP.write()
 
 
 # Display high score and current score together on the 16x16 grid, centered horizontally
 def display_scores(high_score, current_score):
     clear_screen()
-    display_message(str(current_score), 1, 10, BLUE)
+    score_str = str(current_score)
+    scale = 2
+    # 4*scale per char, minus the trailing padding after the last char.
+    width = len(score_str) * 4 * scale - scale
+    offset_x = max(0, (16 - width) // 2)
+    offset_y = (16 - 5 * scale) // 2
+    display_message(score_str, offset_x, offset_y, BLUE, scale=scale)
     # High score hidden for now — re-enable when layout is ready:
-    # high_score_message = f"H:{high_score}"
-    # display_message(high_score_message, 1, 2, GREEN)
+    # display_message(f"H:{high_score}", 1, 1, GREEN)
 
 
 # Render-loop caches. Module state, not class state — `display.py` owns the
