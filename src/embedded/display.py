@@ -79,7 +79,8 @@ special_chars = {
 # Helper to convert (x, y) to NeoPixel index on a 16x16 grid
 def xy_to_index(x, y):
     """(col, row) -> flat NeoPixel index.
-    Applies 90° CCW rotation (px=y, py=15-x), then serpentine-row mapping."""
+    Applies 90° CCW rotation (px=y, py=15-x), then serpentine wiring
+    (odd physical rows run right-to-left)."""
     px = y
     py = 15 - x
     if py % 2 == 0:
