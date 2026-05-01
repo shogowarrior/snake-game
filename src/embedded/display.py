@@ -76,20 +76,24 @@ special_chars = {
 }
 
 
-# Helpers to convert coordinates to NeoPixel indices on the 16x16 panel.
-def _physical_to_index(px, py):
-    """(panel_col, panel_row) -> flat NeoPixel index. Serpentine wiring only —
-    odd physical rows run right-to-left. Use this to draw in the panel's
-    natural orientation, bypassing the rotation in xy_to_index."""
+# Coord -> flat NeoPixel index helpers for the 16x16 panel.
+# Both apply the same serpentine-wiring rule (odd physical rows run right-to-left);
+# they differ only in whether they rotate game-space first.
+def xy_to_index(x, y):
+    """Game-space (col, row) -> flat NeoPixel index. 90° CW rotation, then serpentine."""
+    px = 15 - y
+    py = x
     if py % 2 == 0:
         return py * 16 + px
     return py * 16 + (15 - px)
 
 
-def xy_to_index(x, y):
-    """(col, row) -> flat NeoPixel index for game-space drawing.
-    Applies 90° CW rotation (px=15-y, py=x), then serpentine wiring."""
-    return _physical_to_index(15 - y, x)
+def panel_index(px, py):
+    """Panel-natural (col, row) -> flat NeoPixel index. Serpentine only — no rotation.
+    Use for score / overlay text that should read upright on the unrotated panel."""
+    if py % 2 == 0:
+        return py * 16 + px
+    return py * 16 + (15 - px)
 
 
 # Clear the screen
@@ -115,9 +119,9 @@ def display_char(char, offset_x=0, offset_y=0, color=WHITE):
             py = offset_y + row_idx
             if 0 <= px < 16 and 0 <= py < 16:
                 if pixel == 1:
-                    NP[_physical_to_index(px, py)] = color
+                    NP[panel_index(px, py)] = color
                 else:
-                    NP[_physical_to_index(px, py)] = (0, 0, 0)
+                    NP[panel_index(px, py)] = (0, 0, 0)
 
 
 # Function to display a message
