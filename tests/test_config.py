@@ -7,11 +7,3 @@ def test_config_exposes_rotation_and_gradient_constants():
         assert isinstance(endpoint, tuple)
         assert len(endpoint) == 3
         assert all(isinstance(c, int) and 0 <= c <= 255 for c in endpoint)
-
-
-def test_display_uses_rotation_from_config():
-    import config
-    import display
-
-    # display.py keeps a temporary `ORIENTATION` alias pointing at config.ROTATION.
-    assert display.ORIENTATION == config.ROTATION

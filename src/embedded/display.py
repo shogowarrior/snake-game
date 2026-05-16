@@ -6,10 +6,6 @@ from machine import Pin  # type: ignore
 
 from common.colors import gradient_color
 
-# Temporary alias so the existing xy_to_index body needs zero edits during
-# the framebuffer migration. Removed in Task 9.
-ORIENTATION = ROTATION
-
 WHITE = (128, 128, 128)
 BLACK = (0, 0, 0)
 GREEN = (0, 128, 0)
@@ -138,30 +134,6 @@ special_chars = {
     "@": [(1, 1, 1), (1, 1, 0), (1, 1, 1), (1, 0, 1), (1, 1, 1)],
     " ": [(0, 0, 0), (0, 0, 0), (0, 0, 0), (0, 0, 0), (0, 0, 0)],  # Empty space
 }
-
-
-# Coord -> flat NeoPixel index helpers for the 16x16 panel.
-# Both apply the same serpentine-wiring rule (odd physical rows run right-to-left);
-# they differ only in whether they rotate game-space first.
-def xy_to_index(x, y):
-    """Game-space (col, row) -> flat NeoPixel index. ORIENTATION rotation, then serpentine."""
-    if ORIENTATION == "0":
-        px, py = x, y
-    elif ORIENTATION == "90CW":
-        px, py = 15 - y, x
-    elif ORIENTATION == "180":
-        px, py = 15 - x, 15 - y
-    else:  # "90CCW"
-        px, py = y, 15 - x
-    if py % 2 == 0:
-        return py * 16 + px
-    return py * 16 + (15 - px)
-
-
-# Clear the screen
-def clear_screen():
-    NP.fill(BLACK)
-    NP.write()
 
 
 # Text drawing routes through the framebuffer (set_pixel) so it has no
