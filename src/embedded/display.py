@@ -243,17 +243,17 @@ def draw_snake(engine, palette):
 
     # Clear cells that were snake last frame but aren't now.
     for x, y in _prev_snake_cells - cur:
-        NP[xy_to_index(x, y)] = BLACK
+        set_pixel(x, y, BLACK)
 
     # Repaint current snake cells.
     for i, (x, y) in enumerate(engine.snake):
-        NP[xy_to_index(x, y)] = _gradient_colors[i]
+        set_pixel(x, y, _gradient_colors[i])
 
     # Food pixel.
     fx, fy = engine.food
-    NP[xy_to_index(fx, fy)] = food_color
+    set_pixel(fx, fy, food_color)
 
-    NP.write()
+    flush()
     _prev_snake_cells = cur
     sleep(1 / speed)
 
@@ -264,4 +264,5 @@ def reset_draw_caches():
     _prev_snake_cells = set()
     _gradient_colors = []
     _previous_snake_length = 0
-    clear_screen()
+    clear()
+    flush()

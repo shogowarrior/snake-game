@@ -234,3 +234,46 @@ def test_display_scores_gradient_endpoints_match_config():
     rightmost_x = max(lit_by_x)
     assert lit_by_x[leftmost_x] == config.SCORE_GRADIENT_START
     assert lit_by_x[rightmost_x] == config.SCORE_GRADIENT_END
+
+
+class _FakeEngine:
+    """Minimal stand-in for SnakeEngine — just exposes the attributes draw_snake reads."""
+
+    def __init__(self, snake, food):
+        self.snake = snake
+        self.food = food
+
+
+def test_draw_snake_writes_snake_cells_and_food_to_fb():
+    display.clear()
+    display.reset_draw_caches()
+
+    engine = _FakeEngine(snake=[(5, 5), (5, 6), (5, 7)], food=(10, 10))
+    palette = ((255, 0, 0), (0, 0, 64), (0, 255, 0), 1000)
+    # speed=1000 so the sleep is ~1ms; doesn't matter for the framebuffer test.
+
+    display.draw_snake(engine, palette)
+
+    # Snake cells are lit with the gradient.
+    for x, y in engine.snake:
+        assert any(display._fb[y * 16 + x]), f"snake cell ({x},{y}) not lit"
+    # Food cell is the food color.
+    fx, fy = engine.food
+    assert display._fb[fy * 16 + fx] == (0, 255, 0)
+
+
+def test_draw_snake_clears_vacated_cells_in_fb():
+    display.clear()
+    display.reset_draw_caches()
+
+    # First frame: snake at A.
+    e1 = _FakeEngine(snake=[(5, 5), (5, 6)], food=(10, 10))
+    display.draw_snake(e1, ((255, 0, 0), (0, 0, 64), (0, 255, 0), 1000))
+    assert any(display._fb[6 * 16 + 5])
+
+    # Second frame: snake moved; (5, 6) is vacated.
+    e2 = _FakeEngine(snake=[(5, 4), (5, 5)], food=(10, 10))
+    display.draw_snake(e2, ((255, 0, 0), (0, 0, 64), (0, 255, 0), 1000))
+
+    # (5, 6) should now be black.
+    assert display._fb[6 * 16 + 5] == (0, 0, 0)
