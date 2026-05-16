@@ -42,6 +42,32 @@ def clear():
         _fb[i] = (0, 0, 0)
 
 
+def _compute_lut(rotation):
+    """Build the framebuffer-index → NP-index mapping for a given rotation.
+
+    Called once at module load (and from tests). For each framebuffer cell
+    (x, y), determine the panel cell (px, py) after rotation, then the flat
+    NP index via the serpentine wiring (odd panel rows run right-to-left).
+    """
+    lut = [0] * 256
+    for y in range(16):
+        for x in range(16):
+            if rotation == "0":
+                px, py = x, y
+            elif rotation == "90CW":
+                px, py = 15 - y, x
+            elif rotation == "180":
+                px, py = 15 - x, 15 - y
+            else:  # "90CCW"
+                px, py = y, 15 - x
+            np_index = py * 16 + (px if py % 2 == 0 else 15 - px)
+            lut[y * 16 + x] = np_index
+    return lut
+
+
+_lut = _compute_lut(ROTATION)
+
+
 # Character patterns (5x3 grid for each character)
 digits = {
     "0": [(1, 1, 1), (1, 0, 1), (1, 0, 1), (1, 0, 1), (1, 1, 1)],
