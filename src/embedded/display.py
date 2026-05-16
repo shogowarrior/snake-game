@@ -68,6 +68,17 @@ def _compute_lut(rotation):
 _lut = _compute_lut(ROTATION)
 
 
+def flush():
+    """Push the framebuffer to the LEDs via the precomputed LUT, then NP.write().
+
+    The only place rotation + serpentine apply. Drawers write to _fb in plain
+    (x, y); flush is what makes the pixels show up on the panel.
+    """
+    for i in range(256):
+        NP[_lut[i]] = _fb[i]
+    NP.write()
+
+
 # Character patterns (5x3 grid for each character)
 digits = {
     "0": [(1, 1, 1), (1, 0, 1), (1, 0, 1), (1, 0, 1), (1, 1, 1)],

@@ -96,3 +96,28 @@ def test_compute_lut_is_a_permutation_of_256_indices():
         lut = display._compute_lut(rot)
         assert len(lut) == 256
         assert sorted(lut) == list(range(256))
+
+
+def test_flush_copies_fb_to_np_via_lut():
+    display.clear()
+    display.set_pixel(0, 0, (10, 20, 30))
+    display.set_pixel(15, 15, (40, 50, 60))
+    display.set_pixel(3, 1, (70, 80, 90))  # odd row, exercises serpentine
+
+    display.flush()
+
+    # The framebuffer index for each cell:
+    assert display.NP[display._lut[0 * 16 + 0]] == (10, 20, 30)
+    assert display.NP[display._lut[15 * 16 + 15]] == (40, 50, 60)
+    assert display.NP[display._lut[1 * 16 + 3]] == (70, 80, 90)
+
+
+def test_flush_writes_every_cell_not_just_lit_ones():
+    # After a clear+flush, every NP cell should be (0, 0, 0).
+    display.clear()
+    # Pre-pollute NP to confirm flush overwrites everything.
+    for i in range(256):
+        display.NP[i] = (99, 99, 99)
+    display.flush()
+    for i in range(256):
+        assert display.NP[i] == (0, 0, 0), f"NP[{i}] not cleared"
