@@ -1,9 +1,14 @@
 from time import sleep
 
 import neopixel  # type: ignore
+from config import ROTATION, SCORE_GRADIENT_END, SCORE_GRADIENT_START  # noqa: F401
 from machine import Pin  # type: ignore
 
 from common.colors import gradient_color
+
+# Temporary alias so the existing xy_to_index body needs zero edits during
+# the framebuffer migration. Removed in Task 9.
+ORIENTATION = ROTATION
 
 WHITE = (128, 128, 128)
 BLACK = (0, 0, 0)
@@ -74,13 +79,6 @@ special_chars = {
     "@": [(1, 1, 1), (1, 1, 0), (1, 1, 1), (1, 0, 1), (1, 1, 1)],
     " ": [(0, 0, 0), (0, 0, 0), (0, 0, 0), (0, 0, 0), (0, 0, 0)],  # Empty space
 }
-
-
-# Game-space rotation. Change this to remount the panel in any of the four
-# right-angle orientations without touching the renderers. Snake, food, and
-# score all rotate together so the score reads upright in the same viewing
-# angle the user plays at.
-ORIENTATION = "90CW"  # "0" | "90CW" | "180" | "90CCW"
 
 
 # Coord -> flat NeoPixel index helpers for the 16x16 panel.
