@@ -8,7 +8,7 @@ stay in display.py since they're fixed by the solder.
 # Mounting rotation. One global value applied uniformly to everything drawn on
 # the panel (snake, food, score). Pick the value that makes the score read
 # upright in your physical setup, then commit. Changing this requires a re-flash.
-ROTATION = "90CW"  # "0" | "90CW" | "180" | "90CCW"
+ROTATION = "0"  # "0" | "90CW" | "180" | "90CCW"
 
 # Score-text gradient (game-over screen). The score's lit pixels fade from
 # START on the left to END on the right across the message's bounding box.
