@@ -164,24 +164,27 @@ def clear_screen():
     NP.write()
 
 
-# Score text rotates with the game (via xy_to_index) so it reads upright from
-# the same viewing angle the user plays at. `scale` blows each pattern pixel
-# up to a scale x scale block.
+# Text drawing routes through the framebuffer (set_pixel) so it has no
+# knowledge of rotation or wiring. `scale` blows each pattern pixel up to a
+# scale x scale block. `color` may be an (r, g, b) tuple OR a callable
+# `(x, y) -> (r, g, b)` for per-pixel coloring (gradients).
 def display_char(char, offset_x=0, offset_y=0, color=WHITE, scale=1):
     char = char.upper()
     pattern = characters.get(char) or digits.get(char) or special_chars.get(char)
-
     if pattern is None:
         return
 
+    color_is_callable = callable(color)
     for row_idx, row in enumerate(pattern):
         for col_idx, pixel in enumerate(row):
+            if not pixel:
+                continue
             for dx in range(scale):
                 for dy in range(scale):
                     x = offset_x + col_idx * scale + dx
                     y = offset_y + row_idx * scale + dy
                     if 0 <= x < 16 and 0 <= y < 16:
-                        NP[xy_to_index(x, y)] = color if pixel else (0, 0, 0)
+                        set_pixel(x, y, color(x, y) if color_is_callable else color)
 
 
 def display_message(message, offset_x=0, offset_y=0, color=WHITE, scale=1):
@@ -191,7 +194,7 @@ def display_message(message, offset_x=0, offset_y=0, color=WHITE, scale=1):
         offset_x += advance
         if offset_x >= 16:
             break
-    NP.write()
+    flush()
 
 
 # Display high score and current score together on the 16x16 grid, centered horizontally
