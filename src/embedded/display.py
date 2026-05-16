@@ -1,7 +1,7 @@
 from time import sleep
 
 import neopixel  # type: ignore
-from config import ROTATION, SCORE_GRADIENT_END, SCORE_GRADIENT_START  # noqa: F401
+from config import ROTATION, SCORE_GRADIENT_END, SCORE_GRADIENT_START
 from machine import Pin  # type: ignore
 
 from common.colors import gradient_color
@@ -197,16 +197,23 @@ def display_message(message, offset_x=0, offset_y=0, color=WHITE, scale=1):
     flush()
 
 
-# Display high score and current score together on the 16x16 grid, centered horizontally
+# Game-over score: centered, horizontally gradient-colored. Drawn into the
+# framebuffer in natural coordinates — rotation is applied by flush() (via
+# config.ROTATION), uniformly with the snake/food.
 def display_scores(high_score, current_score):
-    clear_screen()
     score_str = str(current_score)
     scale = 2
     # 4*scale per char, minus the trailing padding after the last char.
     width = len(score_str) * 4 * scale - scale
     offset_x = max(0, (16 - width) // 2)
     offset_y = (16 - 5 * scale) // 2
-    display_message(score_str, offset_x, offset_y, BLUE, scale=scale)
+    left = offset_x
+
+    def gradient(x, _y):
+        return gradient_color(x - left, width, SCORE_GRADIENT_START, SCORE_GRADIENT_END)
+
+    clear()
+    display_message(score_str, offset_x, offset_y, gradient, scale=scale)
     # High score hidden for now — re-enable when layout is ready:
     # display_message(f"H:{high_score}", 1, 1, GREEN)
 

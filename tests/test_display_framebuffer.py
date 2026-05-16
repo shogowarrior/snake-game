@@ -1,5 +1,6 @@
 """Framebuffer primitives — pixel writes, clear, layout."""
 
+import config
 import display
 
 
@@ -190,3 +191,46 @@ def test_display_message_calls_flush():
     nines = sum(1 for c in display.NP.buf if c == (99, 99, 99))
     assert sevens > 0
     assert nines == 0  # all the pre-pollution got overwritten
+
+
+def test_display_scores_clears_then_writes_score():
+    # Pre-pollute the framebuffer with non-zero pixels.
+    for i in range(256):
+        display._fb[i] = (33, 33, 33)
+
+    display.display_scores(high_score=0, current_score=12)
+
+    # Pollution removed: only score pixels are lit.
+    lit_count = sum(1 for c in display._fb if any(c))
+    assert 0 < lit_count < 256
+
+
+def test_display_scores_writes_two_digits_for_two_digit_score():
+    display.clear()
+    display.display_scores(high_score=0, current_score=12)
+
+    # Two digit areas in the framebuffer, separated by a gap.
+    lit_x = {i % 16 for i, c in enumerate(display._fb) if any(c)}
+    # Score is centered: width = 2*4*2 - 2 = 14, offset_x = (16-14)//2 = 1.
+    # First digit x range: 1..6 (cols 0,1,2 of "1" * scale 2).
+    # Second digit x range: 9..14.
+    assert lit_x.issubset(set(range(1, 7)) | set(range(9, 15)))
+    assert lit_x & set(range(1, 7)), "first digit area not lit"
+    assert lit_x & set(range(9, 15)), "second digit area not lit"
+
+
+def test_display_scores_gradient_endpoints_match_config():
+    display.clear()
+    display.display_scores(high_score=0, current_score=12)
+
+    # The leftmost lit column should carry SCORE_GRADIENT_START, the rightmost
+    # lit column should carry SCORE_GRADIENT_END.
+    lit_by_x = {}
+    for i, c in enumerate(display._fb):
+        if any(c):
+            x = i % 16
+            lit_by_x.setdefault(x, c)
+    leftmost_x = min(lit_by_x)
+    rightmost_x = max(lit_by_x)
+    assert lit_by_x[leftmost_x] == config.SCORE_GRADIENT_START
+    assert lit_by_x[rightmost_x] == config.SCORE_GRADIENT_END
