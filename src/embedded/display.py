@@ -20,6 +20,28 @@ NEOPIXEL_PIN = 13
 NUM_PIXELS = 256
 NP = neopixel.NeoPixel(Pin(NEOPIXEL_PIN), NUM_PIXELS)
 
+
+# ---------------------------------------------------------------------------
+# Framebuffer. Drawers write to `_fb` in natural (x, y) coords with no
+# rotation or wiring awareness. `flush()` (added later) is the only thing
+# that touches NP[].
+# ---------------------------------------------------------------------------
+_fb = [(0, 0, 0)] * 256  # flat: _fb[y * 16 + x]
+
+
+def set_pixel(x, y, color):
+    """Set framebuffer cell (x, y) to `color` (an (r, g, b) tuple).
+    Out-of-range (x, y) is silently ignored."""
+    if 0 <= x < 16 and 0 <= y < 16:
+        _fb[y * 16 + x] = color
+
+
+def clear():
+    """Reset all 256 framebuffer cells to (0, 0, 0)."""
+    for i in range(256):
+        _fb[i] = (0, 0, 0)
+
+
 # Character patterns (5x3 grid for each character)
 digits = {
     "0": [(1, 1, 1), (1, 0, 1), (1, 0, 1), (1, 0, 1), (1, 1, 1)],
