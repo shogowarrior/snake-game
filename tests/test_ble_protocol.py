@@ -31,6 +31,7 @@ from ble_protocol import (
     ProtectedPath,
     decode_frame,
     encode_frame,
+    validate_device_path,
 )
 
 
@@ -121,3 +122,43 @@ def test_decode_rejects_unknown_opcode():
     bad = bytes([0xFF, 0x00, 0x00, 0x00])
     with pytest.raises(InvalidFrame):
         decode_frame(bad)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "main.py",
+        "common/engine.py",
+        "common/colors.py",
+        "display.py",
+    ],
+)
+def test_validate_accepts_legal_paths(path):
+    validate_device_path(path)  # should not raise
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "",  # empty
+        "/main.py",  # absolute
+        "../etc/passwd",  # traversal
+        "common/../boot.py",  # traversal via subdir
+        "common/./engine.py",  # current-dir segment (suspicious; reject)
+        "x" * 65,  # over MAX_PATH_LEN (including null we add)
+        "foo\x00bar.py",  # embedded null
+        "subdir/foo.py",  # not in SYNCED_DIRS allowlist
+        "common/nested/deep.py",  # more than one level under common (out of scope)
+        "main.txt",  # top-level non-.py
+        "common/foo",  # no extension in common/ — reject (we sync .py only)
+    ],
+)
+def test_validate_rejects_illegal_paths(path):
+    with pytest.raises(InvalidPath):
+        validate_device_path(path)
+
+
+@pytest.mark.parametrize("path", ["boot.py", "high_score.txt", "secrets.py"])
+def test_validate_rejects_protected_files(path):
+    with pytest.raises(InvalidPath):
+        validate_device_path(path)

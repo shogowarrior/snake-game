@@ -111,3 +111,63 @@ def decode_frame(buf):
     if len(body) < payload_len:
         raise InvalidFrame("payload truncated (expected " + str(payload_len) + ", got " + str(len(body)) + ")")
     return op, seq, bytes(body)
+
+
+# ---- Path validation ---------------------------------------------
+
+
+def validate_device_path(path):
+    """Reject anything that isn't a legal, allowlist-conforming, non-protected device path.
+
+    Allowed shapes:
+      - Top-level: matches one of SYNCED_TOP_LEVEL_GLOBS (currently *.py).
+      - In a synced dir: "<dir>/<file>.py" where <dir> in SYNCED_DIRS, exactly one slash.
+
+    Rejected: empty, absolute, "..", embedded null, over MAX_PATH_LEN-1 chars (we add a null
+    terminator on the wire), protected names, or anything outside the allowlist.
+
+    Raises InvalidPath on rejection.
+    """
+    if not path:
+        raise InvalidPath("empty path")
+    if len(path) > MAX_PATH_LEN - 1:  # -1 for trailing null on the wire
+        raise InvalidPath("path too long: " + str(len(path)) + " > " + str(MAX_PATH_LEN - 1))
+    if "\x00" in path:
+        raise InvalidPath("embedded null")
+    if path.startswith("/"):
+        raise InvalidPath("absolute path: " + path)
+    parts = path.split("/")
+    if ".." in parts:
+        raise InvalidPath("traversal: " + path)
+    if any(p == "." for p in parts):
+        raise InvalidPath("current-dir segment: " + path)
+    if "" in parts:
+        raise InvalidPath("empty segment: " + path)
+
+    if path in PROTECTED_FILES:
+        raise ProtectedPath("protected: " + path)
+
+    # Classify: top-level or one-level-deep in a synced dir.
+    if "/" not in path:
+        # Top-level — must match one of the globs.
+        if not any(_glob_match(path, g) for g in SYNCED_TOP_LEVEL_GLOBS):
+            raise InvalidPath("top-level path not in allowlist: " + path)
+        return
+
+    if path.count("/") > 1:
+        raise InvalidPath("nested beyond one level: " + path)
+    dir_part, file_part = path.split("/", 1)
+    if dir_part not in SYNCED_DIRS:
+        raise InvalidPath("dir not in SYNCED_DIRS: " + dir_part)
+    if not file_part.endswith(".py"):
+        raise InvalidPath("non-.py file in synced dir: " + path)
+    if not file_part or file_part == ".py":
+        raise InvalidPath("empty filename: " + path)
+
+
+def _glob_match(name, pattern):
+    """Tiny *.ext matcher. MicroPython has no fnmatch; this covers our one case."""
+    if pattern.startswith("*."):
+        ext = pattern[1:]  # ".py"
+        return name.endswith(ext) and len(name) > len(ext)
+    return name == pattern
