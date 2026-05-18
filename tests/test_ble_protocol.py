@@ -29,9 +29,11 @@ from ble_protocol import (
     InvalidFrame,
     InvalidPath,
     ProtectedPath,
+    compute_crc32,
     decode_frame,
     encode_begin_file,
     encode_frame,
+    encode_session,
     parse_begin_file,
     validate_device_path,
 )
@@ -200,3 +202,76 @@ def test_parse_begin_file_validates_path():
     payload = (10).to_bytes(4, "little") + (0).to_bytes(4, "little") + b"../bad\x00"
     with pytest.raises(InvalidPath):
         parse_begin_file(payload)
+
+
+def test_compute_crc32_matches_binascii():
+    import binascii
+
+    data = b"hello world"
+    assert compute_crc32(data) == binascii.crc32(data) & 0xFFFFFFFF
+
+
+def test_encode_session_emits_correct_opcode_order():
+    files = [
+        ("main.py", b"print('hi')"),
+        ("common/engine.py", b"# engine"),
+    ]
+    frames = list(encode_session(files))
+    ops = [decode_frame(f)[0] for f in frames]
+    # Each file: BEGIN, one or more CHUNK, END. Then MANIFEST, then COMMIT.
+    assert ops[0] == OP_BEGIN_FILE
+    assert ops[-1] == OP_COMMIT
+    assert ops[-2] == OP_MANIFEST
+    assert OP_BEGIN_FILE in ops
+    assert ops.count(OP_BEGIN_FILE) == 2
+    assert ops.count(OP_END_FILE) == 2
+    assert ops.count(OP_COMMIT) == 1
+    assert ops.count(OP_MANIFEST) == 1
+
+
+def test_encode_session_manifest_payload_lists_paths():
+    files = [("main.py", b"x"), ("common/engine.py", b"y")]
+    frames = list(encode_session(files))
+    # Manifest is second-to-last
+    op, _, payload = decode_frame(frames[-2])
+    assert op == OP_MANIFEST
+    paths = payload.decode("utf-8").splitlines()
+    assert paths == ["main.py", "common/engine.py"]
+
+
+def test_encode_session_chunks_large_file_across_multiple_frames():
+    from ble_protocol import MAX_PAYLOAD_LEN
+
+    big = b"X" * (MAX_PAYLOAD_LEN * 3 + 50)  # forces 4 chunks
+    files = [("main.py", big)]
+    frames = list(encode_session(files))
+    chunk_frames = [f for f in frames if decode_frame(f)[0] == OP_FILE_CHUNK]
+    # Reassembled payload bytes equal original
+    body = b"".join(decode_frame(f)[2] for f in chunk_frames)
+    assert body == big
+    assert len(chunk_frames) >= 4
+
+
+def test_encode_session_sequence_numbers_are_monotonic_mod_256():
+    files = [("main.py", b"x" * 100)]
+    frames = list(encode_session(files))
+    seqs = [decode_frame(f)[1] for f in frames]
+    # Strictly increasing modulo 256
+    for prev, nxt in zip(seqs, seqs[1:]):
+        assert nxt == (prev + 1) & 0xFF
+
+
+def test_encode_session_begin_file_crc_matches_body():
+    body = b"some bytes"
+    files = [("main.py", body)]
+    frames = list(encode_session(files))
+    op0, _, payload0 = decode_frame(frames[0])
+    assert op0 == OP_BEGIN_FILE
+    _, declared_size, declared_crc = parse_begin_file(payload0)
+    assert declared_size == len(body)
+    assert declared_crc == compute_crc32(body)
+
+
+def test_encode_session_validates_paths():
+    with pytest.raises(InvalidPath):
+        list(encode_session([("../etc/passwd", b"x")]))

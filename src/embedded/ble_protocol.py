@@ -204,3 +204,58 @@ def parse_begin_file(payload):
         raise InvalidFrame("BEGIN_FILE path is not utf-8")
     validate_device_path(path)
     return path, size, crc
+
+
+# ---- CRC32 wrapper (consistent with binascii.crc32) ----------------
+def compute_crc32(data):
+    """Match binascii.crc32 semantics: unsigned, masked to 32 bits."""
+    from binascii import crc32
+
+    return crc32(data) & 0xFFFFFFFF
+
+
+# ---- Session encoder ----------------------------------------------
+def encode_session(files):
+    """Yield the full frame sequence for a sync session.
+
+    `files` is an iterable of (device_path, bytes). Order is preserved:
+    files are sent in the given order, then a single MANIFEST listing them
+    in the same order, then a single COMMIT.
+
+    Raises InvalidPath if any path fails validation.
+    """
+    seq = 0
+
+    def step():
+        nonlocal seq
+        cur = seq
+        seq = (seq + 1) & 0xFF
+        return cur
+
+    manifest_paths = []
+    for path, body in files:
+        validate_device_path(path)
+        size = len(body)
+        if size > MAX_FILE_SIZE:
+            raise InvalidPath("file " + path + " too big: " + str(size))
+        manifest_paths.append(path)
+
+        yield encode_frame(OP_BEGIN_FILE, step(), encode_begin_file(path, size, compute_crc32(body)))
+
+        # Chunk body into MAX_PAYLOAD_LEN-sized pieces. Zero-byte files still
+        # emit at least one (empty) CHUNK so the receiver sees the END marker
+        # cleanly bracket a body.
+        if size == 0:
+            yield encode_frame(OP_FILE_CHUNK, step(), b"")
+        else:
+            i = 0
+            while i < size:
+                chunk = body[i : i + MAX_PAYLOAD_LEN]
+                yield encode_frame(OP_FILE_CHUNK, step(), chunk)
+                i += MAX_PAYLOAD_LEN
+
+        yield encode_frame(OP_END_FILE, step(), b"")
+
+    manifest_payload = "\n".join(manifest_paths).encode("utf-8")
+    yield encode_frame(OP_MANIFEST, step(), manifest_payload)
+    yield encode_frame(OP_COMMIT, step(), b"")
