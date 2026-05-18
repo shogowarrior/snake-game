@@ -64,3 +64,50 @@ class InvalidFrame(Exception):
 
 class BadCRC(Exception):
     """END_FILE arrived but computed CRC doesn't match BEGIN_FILE's declared value."""
+
+
+# ---- Frame codec --------------------------------------------------
+# Wire format: [1 byte op][1 byte seq][2 bytes payload_len LE][payload]
+
+_HEADER_LEN = 4
+_KNOWN_OPS = frozenset(
+    (
+        OP_BEGIN_FILE,
+        OP_FILE_CHUNK,
+        OP_END_FILE,
+        OP_MANIFEST,
+        OP_COMMIT,
+        OP_ABORT,
+        OP_ACK,
+        OP_NACK,
+        OP_READY,
+        OP_COMMITTED,
+    )
+)
+
+
+def encode_frame(op, seq, payload):
+    """Encode one frame to bytes. Raises ValueError on bad seq, FrameTooLarge on oversize."""
+    if not (0 <= seq <= 255):
+        raise ValueError("seq must be 0..255, got " + repr(seq))
+    n = len(payload)
+    if n > MAX_PAYLOAD_LEN:
+        raise FrameTooLarge("payload " + str(n) + " > MAX_PAYLOAD_LEN " + str(MAX_PAYLOAD_LEN))
+    return bytes([op & 0xFF, seq & 0xFF, n & 0xFF, (n >> 8) & 0xFF]) + bytes(payload)
+
+
+def decode_frame(buf):
+    """Decode one frame from bytes -> (op, seq, payload). Raises InvalidFrame on malformed input."""
+    if len(buf) < _HEADER_LEN:
+        raise InvalidFrame("truncated header (got " + str(len(buf)) + " bytes)")
+    op = buf[0]
+    seq = buf[1]
+    payload_len = buf[2] | (buf[3] << 8)
+    if op not in _KNOWN_OPS:
+        raise InvalidFrame("unknown opcode " + hex(op))
+    if payload_len > MAX_PAYLOAD_LEN:
+        raise InvalidFrame("declared payload " + str(payload_len) + " > cap")
+    body = buf[_HEADER_LEN : _HEADER_LEN + payload_len]
+    if len(body) < payload_len:
+        raise InvalidFrame("payload truncated (expected " + str(payload_len) + ", got " + str(len(body)) + ")")
+    return op, seq, bytes(body)
