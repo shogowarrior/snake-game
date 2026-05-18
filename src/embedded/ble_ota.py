@@ -15,6 +15,7 @@ from ble_protocol import (
     NACK_OUT_OF_ORDER,
     NACK_OVERSIZE,
     NACK_PROTECTED,
+    NACK_WRITE_FAILED,
     OP_ABORT,
     OP_ACK,
     OP_BEGIN_FILE,
@@ -23,6 +24,7 @@ from ble_protocol import (
     OP_FILE_CHUNK,
     OP_MANIFEST,
     OP_NACK,
+    STAGING_DIR,
     FrameTooLarge,
     InvalidFrame,
     InvalidPath,
@@ -112,6 +114,14 @@ class Session:
         self._cur_crc = crc
         self._cur_bytes_received = 0
         self._cur_crc_accum = 0
+        # Open the staging file. Make parent dirs if needed.
+        staging_path = STAGING_DIR + "/" + path
+        try:
+            _ensure_parent_dirs(staging_path)
+            self._cur_staging_fh = open(staging_path, "wb")
+        except OSError:
+            self._abort(NACK_WRITE_FAILED, last_seq=seq)
+            return
         self.state = STATE_RECEIVING
         self._ack(seq)
 
@@ -178,6 +188,7 @@ class Session:
         # Client-initiated; not a NACK situation. Just clean up.
         self.state = STATE_ABORTED
         self._cleanup_open_file()
+        _wipe_staging()
         self._ack(seq)
 
     # ---- Helpers --------------------------------------------------------
@@ -186,6 +197,7 @@ class Session:
 
     def _abort(self, reason, last_seq):
         self._cleanup_open_file()
+        _wipe_staging()
         self.on_status(encode_frame(OP_NACK, last_seq, bytes([last_seq, reason])))
         self.state = STATE_ABORTED
 
@@ -196,3 +208,69 @@ class Session:
             except OSError:
                 pass
             self._cur_staging_fh = None
+
+
+# ---- Filesystem helpers --------------------------------------------
+def _ensure_parent_dirs(path):
+    """Create any missing parent directories for `path`. No-op if they exist.
+
+    Works on MicroPython (only os.mkdir, no makedirs). Tolerates EEXIST.
+    """
+    import os
+
+    parts = path.split("/")
+    if len(parts) <= 1:
+        return
+    acc = ""
+    for p in parts[:-1]:
+        acc = (acc + "/" + p) if acc else p
+        try:
+            os.mkdir(acc)
+        except OSError:
+            # Exists or non-creatable; tolerated. If it's truly broken we'll
+            # surface an OSError when we open the file.
+            pass
+
+
+def _wipe_staging():
+    """Recursively remove STAGING_DIR. Best-effort: ignore individual unlink errors."""
+    if not _exists(STAGING_DIR):
+        return
+    _rmtree(STAGING_DIR)
+
+
+def _exists(path):
+    import os
+
+    try:
+        os.stat(path)
+        return True
+    except OSError:
+        return False
+
+
+def _rmtree(path):
+    import os
+
+    try:
+        for entry in os.listdir(path):
+            child = path + "/" + entry
+            try:
+                if _isdir(child):
+                    _rmtree(child)
+                else:
+                    os.remove(child)
+            except OSError:
+                pass
+        os.rmdir(path)
+    except OSError:
+        pass
+
+
+def _isdir(path):
+    import os
+
+    try:
+        return (os.stat(path)[0] & 0x4000) != 0  # S_IFDIR
+    except OSError:
+        return False

@@ -9,13 +9,20 @@ Filesystem operations use tmp_path + chdir so staging writes are sandboxed.
 import ble_ota
 import pytest
 from ble_protocol import (
+    NACK_BAD_CRC,
     NACK_BAD_PATH,
     NACK_OUT_OF_ORDER,
     NACK_PROTECTED,
+    OP_ABORT,
     OP_BEGIN_FILE,
+    OP_END_FILE,
     OP_FILE_CHUNK,
     OP_NACK,
+    STAGING_DIR,
+    compute_crc32,
+    encode_begin_file,
     encode_frame,
+    encode_session,
 )
 
 
@@ -91,3 +98,58 @@ def _decoded_op(frame):
 def _nack_reason(frame):
     # NACK payload is [seq, reason]
     return frame[5] if len(frame) >= 6 else None
+
+
+def test_happy_path_writes_files_to_staging(chdir_tmp):
+    files = [
+        ("main.py", b"print('new')"),
+        ("common/engine.py", b"# engine"),
+    ]
+    s = ble_ota.Session()
+    statuses = feed(s, list(encode_session(files)))
+
+    # Files should exist in .staging/ after END_FILE for each.
+    for path, expected in files:
+        staged = chdir_tmp / STAGING_DIR / path
+        assert staged.exists(), "missing " + str(staged)
+        assert staged.read_bytes() == expected
+
+    # State should have walked all the way to COMMITTED.
+    assert s.state == ble_ota.STATE_COMMITTED
+    # Every chunk acked, no NACKs.
+    nacks = [st for st in statuses if st[0] == OP_NACK]
+    assert nacks == []
+
+
+def test_bad_crc_nacks_and_no_file_appears(chdir_tmp):
+    # Build frames where END_FILE's expected CRC doesn't match the body.
+    body = b"abc"
+    bad_crc = (compute_crc32(body) + 1) & 0xFFFFFFFF
+    begin_payload = encode_begin_file("main.py", len(body), bad_crc)
+    frames = [
+        encode_frame(OP_BEGIN_FILE, 0, begin_payload),
+        encode_frame(OP_FILE_CHUNK, 1, body),
+        encode_frame(OP_END_FILE, 2, b""),
+    ]
+    s = ble_ota.Session()
+    statuses = feed(s, frames)
+    assert any(st[0] == OP_NACK and st[5] == NACK_BAD_CRC for st in statuses)
+    assert s.state == ble_ota.STATE_ABORTED
+    # Partial-write to .staging/main.py is cleaned up.
+    staged = chdir_tmp / STAGING_DIR / "main.py"
+    assert not staged.exists()
+
+
+def test_staging_dir_is_cleaned_on_abort(chdir_tmp):
+    body = b"hi"
+    frames = [
+        encode_frame(OP_BEGIN_FILE, 0, encode_begin_file("main.py", len(body), compute_crc32(body))),
+        encode_frame(OP_FILE_CHUNK, 1, body),
+        encode_frame(OP_END_FILE, 2, b""),
+        encode_frame(OP_ABORT, 3, b""),
+    ]
+    s = ble_ota.Session()
+    feed(s, frames)
+    assert s.state == ble_ota.STATE_ABORTED
+    # Staging dir should be wiped on abort.
+    assert not (chdir_tmp / STAGING_DIR).exists()
