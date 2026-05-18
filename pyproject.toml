@@ -20,6 +20,7 @@ dev = [
     "mypy>=1.13",
     "pytest>=8.0",
     "pre-commit>=4.0",
+    "bleak>=0.22.0",
 ]
 
 [build-system]
