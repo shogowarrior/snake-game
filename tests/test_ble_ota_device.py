@@ -262,3 +262,40 @@ def test_listen_lights_corner_pixel_while_advertising(chdir_tmp, no_soft_reset, 
     ble_ota.listen(timeout_secs=0.05)
     assert any(c[0] == "set" for c in calls)
     assert any(c[0] == "flush" for c in calls)
+
+
+def test_main_run_game_skips_listen_when_flag_disabled(monkeypatch):
+    """When BLE_OTA_ENABLED=False, main.run_game must not import ble_ota."""
+    import sys
+
+    monkeypatch.delitem(sys.modules, "ble_ota", raising=False)
+
+    import config
+
+    monkeypatch.setattr(config, "BLE_OTA_ENABLED", False)
+
+    # Stub SnakeGame so run_game's loop exits immediately.
+    import game
+
+    class _OneShotGame:
+        def __init__(self, *a, **kw):
+            self.engine = type("E", (), {"game_over": True})()
+
+        def start_game(self):
+            pass
+
+        def tick(self):
+            pass
+
+        def end_game(self):
+            raise KeyboardInterrupt  # exit run_game cleanly
+
+    monkeypatch.setattr(game, "SnakeGame", _OneShotGame)
+
+    import main
+
+    try:
+        main.run_game()
+    except KeyboardInterrupt:
+        pass
+    assert "ble_ota" not in sys.modules
