@@ -215,3 +215,50 @@ def test_commit_pass_handles_empty_manifest(chdir_tmp, no_soft_reset):
     feed(s, frames)
     assert not (chdir_tmp / "main.py").exists()
     assert s.state == ble_ota.STATE_COMMITTED
+
+
+def test_listen_returns_after_timeout_with_no_client(chdir_tmp, no_soft_reset, monkeypatch):
+    """If no central connects in `timeout_secs`, listen() returns falsy and never resets."""
+    # Use a tiny timeout to keep the test fast.
+    result = ble_ota.listen(timeout_secs=0.05)
+    assert result is False
+    no_soft_reset.assert_not_called()
+
+
+def test_listen_drives_session_when_client_writes_frames(chdir_tmp, no_soft_reset, monkeypatch):
+    """End-to-end: connect, send a full session, expect commit + soft_reset."""
+    files = [("main.py", b"print('ota')")]
+    frames = list(encode_session(files))
+
+    # Install a fake BLE that auto-connects and pumps frames inside listen().
+    import bluetooth
+
+    bt = bluetooth.BLE()
+
+    def auto_session(control_handle):
+        bt.client_connect()
+        for f in frames:
+            bt.client_write(control_handle, f)
+
+    # listen() is expected to expose its control characteristic handle so a
+    # test driver can poke writes. Hook via a module-level injection.
+    monkeypatch.setattr(ble_ota, "_on_listen_ready", lambda control_handle, status_handle: auto_session(control_handle))
+
+    ble_ota.listen(timeout_secs=2.0, ble=bt)
+
+    # Files were committed and soft_reset was called.
+    assert (chdir_tmp / "main.py").read_bytes() == b"print('ota')"
+    no_soft_reset.assert_called_once()
+
+
+def test_listen_lights_corner_pixel_while_advertising(chdir_tmp, no_soft_reset, monkeypatch):
+    """The visual indicator must call display.set_pixel + flush at least once."""
+    calls = []
+    import display
+
+    monkeypatch.setattr(display, "set_pixel", lambda x, y, c: calls.append(("set", x, y, c)))
+    monkeypatch.setattr(display, "flush", lambda: calls.append(("flush",)))
+
+    ble_ota.listen(timeout_secs=0.05)
+    assert any(c[0] == "set" for c in calls)
+    assert any(c[0] == "flush" for c in calls)

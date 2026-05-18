@@ -25,6 +25,7 @@ from ble_protocol import (
     OP_FILE_CHUNK,
     OP_MANIFEST,
     OP_NACK,
+    OP_READY,
     PROTECTED_FILES,
     STAGING_DIR,
     SYNCED_DIRS,
@@ -357,3 +358,137 @@ def _soft_reset():
     import machine  # type: ignore
 
     machine.soft_reset()
+
+
+# ---- BLE service definition (UUIDs are internal; not exposed via config) -----
+SERVICE_UUID = b"\x00\xff\x10\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+CONTROL_UUID = b"\x00\xff\x10\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+STATUS_UUID = b"\x00\xff\x10\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+
+# Indicator pixel position (top-left corner)
+_INDICATOR_X = 0
+_INDICATOR_Y = 0
+_COLOR_ADVERTISING = (0, 0, 80)  # blue
+_COLOR_CONNECTED = (0, 80, 80)  # cyan
+_COLOR_OFF = (0, 0, 0)
+
+
+# Test hook: overridden by tests to inject behavior once listen() is ready.
+def _on_listen_ready(control_handle, status_handle):
+    pass
+
+
+def listen(timeout_secs, ble=None):
+    """Boot-window BLE listen.
+
+    Advertises for `timeout_secs`; if a central connects, fully drives a
+    Session against the GATT characteristics until commit or abort. Returns
+    True if a commit happened (caller should not see this — device soft-resets
+    before this returns), False on timeout or abort.
+    """
+    import time
+
+    from config import BLE_DEVICE_NAME
+
+    if ble is None:
+        import bluetooth  # type: ignore
+
+        ble = bluetooth.BLE()
+
+    ble.active(True)
+    ble.config(gap_name=BLE_DEVICE_NAME)
+
+    # MicroPython's bluetooth module exposes these flags as constants on the module.
+    import bluetooth  # type: ignore
+
+    flag_write = getattr(bluetooth, "FLAG_WRITE_NO_RESPONSE", 0x0004)
+    flag_notify = getattr(bluetooth, "FLAG_NOTIFY", 0x0010)
+
+    services = (
+        (
+            SERVICE_UUID,
+            (
+                (CONTROL_UUID, flag_write),
+                (STATUS_UUID, flag_notify),
+            ),
+        ),
+    )
+    handles = ble.gatts_register_services(services)
+    control_handle, status_handle = handles[0]
+
+    session = Session()
+    state = {"committed": False, "connected": False, "conn_handle": 0}
+
+    def send_status(frame):
+        try:
+            ble.gatts_notify(state["conn_handle"], status_handle, frame)
+        except OSError:
+            pass
+
+    session.on_status = send_status
+
+    def irq(event, data):
+        if event == 1:  # IRQ_CENTRAL_CONNECT
+            conn_handle, _, _ = data
+            state["connected"] = True
+            state["conn_handle"] = conn_handle
+            _set_indicator(_COLOR_CONNECTED)
+            send_status(encode_frame(OP_READY, 0, b""))
+        elif event == 2:  # IRQ_CENTRAL_DISCONNECT
+            state["connected"] = False
+            if session.state != STATE_COMMITTED:
+                # Treat unexpected disconnect as abort: wipe staging, no reset.
+                session._cleanup_open_file()
+                _wipe_staging()
+                session.state = STATE_ABORTED
+        elif event == 3:  # IRQ_GATTS_WRITE
+            _, value_handle = data
+            if value_handle == control_handle:
+                frame = ble.gatts_read(control_handle)
+                session.handle_frame(frame)
+                if session.state == STATE_COMMITTED:
+                    state["committed"] = True
+
+    ble.irq(irq)
+    # Advertise (interval microseconds; real value irrelevant for fakes).
+    if hasattr(ble, "gap_advertise"):
+        ble.gap_advertise(100_000, adv_data=_adv_payload(BLE_DEVICE_NAME))
+    _set_indicator(_COLOR_ADVERTISING)
+
+    # Allow tests to inject frames right after the service is up.
+    _on_listen_ready(control_handle, status_handle)
+
+    # Wait loop: poll until either timeout elapses, a commit happened, or the
+    # session aborted with no active connection.
+    deadline = time.monotonic() + timeout_secs
+    while time.monotonic() < deadline:
+        if state["committed"]:
+            _set_indicator(_COLOR_OFF)
+            return True
+        if session.state == STATE_ABORTED and not state["connected"]:
+            _set_indicator(_COLOR_OFF)
+            return False
+        time.sleep(0.02)
+
+    _set_indicator(_COLOR_OFF)
+    # If we got here without a commit, ensure staging is clean (in case the
+    # session was mid-flight and the central just stayed connected idle).
+    if session.state != STATE_COMMITTED:
+        _wipe_staging()
+    return False
+
+
+def _adv_payload(name):
+    name_bytes = name.encode("utf-8")[:29]
+    return bytes([len(name_bytes) + 1, 0x09]) + name_bytes  # 0x09 = complete local name
+
+
+def _set_indicator(color):
+    """Single-pixel visual cue. Tolerates a stubbed display in tests."""
+    try:
+        import display  # type: ignore
+
+        display.set_pixel(_INDICATOR_X, _INDICATOR_Y, color)
+        display.flush()
+    except Exception:
+        pass
