@@ -30,7 +30,9 @@ from ble_protocol import (
     InvalidPath,
     ProtectedPath,
     decode_frame,
+    encode_begin_file,
     encode_frame,
+    parse_begin_file,
     validate_device_path,
 )
 
@@ -162,3 +164,39 @@ def test_validate_rejects_illegal_paths(path):
 def test_validate_rejects_protected_files(path):
     with pytest.raises(InvalidPath):
         validate_device_path(path)
+
+
+def test_begin_file_round_trip():
+    payload = encode_begin_file(path="common/engine.py", size=1234, crc=0xDEADBEEF)
+    path, size, crc = parse_begin_file(payload)
+    assert path == "common/engine.py"
+    assert size == 1234
+    assert crc == 0xDEADBEEF
+
+
+def test_begin_file_rejects_bad_path_on_encode():
+    with pytest.raises(InvalidPath):
+        encode_begin_file(path="../etc/passwd", size=10, crc=0)
+
+
+def test_begin_file_rejects_oversize_on_encode():
+    with pytest.raises(InvalidPath):
+        encode_begin_file(path="x.py", size=MAX_FILE_SIZE + 1, crc=0)
+
+
+def test_parse_begin_file_rejects_short_payload():
+    with pytest.raises(InvalidFrame):
+        parse_begin_file(b"\x00\x00\x00\x00")  # only 4 bytes; need 8 + path + null
+
+
+def test_parse_begin_file_rejects_missing_null_terminator():
+    # 8 bytes for size+crc, then path with no null
+    payload = (1234).to_bytes(4, "little") + (0xDEADBEEF).to_bytes(4, "little") + b"main.py"
+    with pytest.raises(InvalidFrame):
+        parse_begin_file(payload)
+
+
+def test_parse_begin_file_validates_path():
+    payload = (10).to_bytes(4, "little") + (0).to_bytes(4, "little") + b"../bad\x00"
+    with pytest.raises(InvalidPath):
+        parse_begin_file(payload)

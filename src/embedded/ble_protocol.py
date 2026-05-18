@@ -171,3 +171,36 @@ def _glob_match(name, pattern):
         ext = pattern[1:]  # ".py"
         return name.endswith(ext) and len(name) > len(ext)
     return name == pattern
+
+
+# ---- BEGIN_FILE payload codec ------------------------------------
+# Layout: [u32 size LE][u32 crc32 LE][utf-8 path][\0]
+
+
+def encode_begin_file(path, size, crc):
+    """Build the BEGIN_FILE payload. Validates the path and size."""
+    validate_device_path(path)
+    if size < 0 or size > MAX_FILE_SIZE:
+        raise InvalidPath("size out of range: " + str(size))
+    path_bytes = path.encode("utf-8")
+    return (size & 0xFFFFFFFF).to_bytes(4, "little") + (crc & 0xFFFFFFFF).to_bytes(4, "little") + path_bytes + b"\x00"
+
+
+def parse_begin_file(payload):
+    """Decode a BEGIN_FILE payload -> (path, size, crc). Validates the path."""
+    if len(payload) < 8 + 1:  # 4+4 + at least null
+        raise InvalidFrame("BEGIN_FILE payload too short")
+    size = int.from_bytes(payload[0:4], "little")
+    crc = int.from_bytes(payload[4:8], "little")
+    rest = payload[8:]
+    nul = rest.find(b"\x00")
+    if nul < 0:
+        raise InvalidFrame("BEGIN_FILE missing null terminator")
+    if nul != len(rest) - 1:
+        raise InvalidFrame("BEGIN_FILE has bytes after null terminator")
+    try:
+        path = rest[:nul].decode("utf-8")
+    except UnicodeError:
+        raise InvalidFrame("BEGIN_FILE path is not utf-8")
+    validate_device_path(path)
+    return path, size, crc
