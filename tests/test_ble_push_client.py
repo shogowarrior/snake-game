@@ -51,3 +51,71 @@ def test_dry_run_main_prints_frames_without_connecting(tmp_path, capsys, monkeyp
     out = capsys.readouterr().out
     assert "BEGIN_FILE" in out
     assert "COMMIT" in out
+
+
+import asyncio  # noqa: E402
+
+from ble_protocol import (  # noqa: E402
+    NACK_BAD_CRC,
+    OP_COMMITTED,
+    OP_NACK,
+    encode_frame,
+)
+
+
+class FakeTransport:
+    """Stand-in for the bleak client. Records writes; replays scripted notifies."""
+
+    def __init__(self, script=None):
+        self.writes = []
+        self._notify_cb = None
+        # `script` maps frame index -> notification frame to deliver after that write.
+        self._script = script or {}
+
+    async def connect(self, name, timeout):
+        return self  # context-manager-like
+
+    async def disconnect(self):
+        pass
+
+    async def write_control(self, frame):
+        self.writes.append(frame)
+        idx = len(self.writes) - 1
+        if idx in self._script:
+            await asyncio.sleep(0)
+            self._notify_cb(self._script[idx])
+
+    def on_status(self, cb):
+        self._notify_cb = cb
+
+
+def test_push_succeeds_when_committed_status_arrives():
+    files = [("main.py", b"hello")]
+    # Send a COMMITTED notification as soon as our last frame (the COMMIT op) is written.
+    # Build the script: index = len(frames)-1
+    from ble_protocol import encode_session
+
+    nframes = sum(1 for _ in encode_session(files))
+    transport = FakeTransport(script={nframes - 1: encode_frame(OP_COMMITTED, 0, b"")})
+
+    rc = asyncio.run(ble_push._push_async(files, name="snake-ota", timeout=1.0, transport=transport))
+    assert rc == 0
+    assert len(transport.writes) == nframes
+
+
+def test_push_fails_on_nack(capsys):
+    files = [("main.py", b"hello")]
+    transport = FakeTransport(script={0: encode_frame(OP_NACK, 0, bytes([0, NACK_BAD_CRC]))})
+
+    rc = asyncio.run(ble_push._push_async(files, name="snake-ota", timeout=1.0, transport=transport))
+    assert rc == 1
+    captured = capsys.readouterr()
+    out = captured.out + captured.err
+    assert "NACK" in out or "BAD_CRC" in out
+
+
+def test_push_times_out_without_committed():
+    files = [("main.py", b"x")]
+    transport = FakeTransport(script={})  # no responses at all
+    rc = asyncio.run(ble_push._push_async(files, name="snake-ota", timeout=0.1, transport=transport))
+    assert rc == 1

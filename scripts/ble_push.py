@@ -106,9 +106,128 @@ def main_sync(argv):
     return asyncio.run(_push_async(files, args.name, args.timeout))
 
 
-async def _push_async(files, name, timeout):
-    # Real bleak wiring lives in Task 14; for now this path is unused under dry-run.
-    raise NotImplementedError("BLE push runtime is added in Task 14")
+async def _push_async(files, name, timeout, transport=None):
+    """Drive a sync session over the given transport. Returns process exit code."""
+    if transport is None:
+        transport = _BleakTransport()
+
+    completed = asyncio.Event()
+    failed = {"flag": False, "reason": None}
+
+    def on_status(frame):
+        op, seq, payload = decode_frame(frame)
+        if op == OP_COMMITTED:
+            print("device: COMMITTED")
+            completed.set()
+        elif op == OP_NACK:
+            reason = payload[1] if len(payload) >= 2 else 0
+            failed["flag"] = True
+            failed["reason"] = reason
+            print(
+                f"device: NACK reason=0x{reason:02x} ({_nack_name(reason)})",
+                file=sys.stderr,
+            )
+            completed.set()
+        elif op == OP_READY:
+            print("device: READY")
+        elif op == OP_ACK:
+            pass  # ignore for now
+        else:
+            print(f"device: unknown op 0x{op:02x}")
+
+    transport.on_status(on_status)
+    try:
+        await transport.connect(name=name or _default_device_name(), timeout=timeout)
+    except Exception as exc:
+        print("connect failed: " + str(exc), file=sys.stderr)
+        return 1
+
+    try:
+        for frame in encode_session(files):
+            await transport.write_control(frame)
+        # After the last COMMIT write, wait up to `timeout` for COMMITTED/NACK.
+        try:
+            await asyncio.wait_for(completed.wait(), timeout=timeout)
+        except TimeoutError:
+            print("timed out waiting for device COMMITTED", file=sys.stderr)
+            return 1
+    finally:
+        try:
+            await transport.disconnect()
+        except Exception:
+            pass
+
+    return 1 if failed["flag"] else 0
+
+
+def _default_device_name():
+    """Read BLE_DEVICE_NAME from the embedded config without importing the device code."""
+    try:
+        from config import BLE_DEVICE_NAME  # type: ignore
+
+        return BLE_DEVICE_NAME
+    except Exception:
+        return "snake-ota"
+
+
+_NACK_NAMES = {
+    0x01: "BAD_CRC",
+    0x02: "BAD_PATH",
+    0x03: "OVERSIZE",
+    0x04: "OUT_OF_ORDER",
+    0x05: "WRITE_FAILED",
+    0x06: "PROTECTED",
+}
+
+
+def _nack_name(code):
+    return _NACK_NAMES.get(code, "UNKNOWN")
+
+
+class _BleakTransport:
+    """Production transport using bleak. Imported lazily so tests don't need bleak."""
+
+    def __init__(self):
+        self._client = None
+        self._status_cb = None
+
+    async def connect(self, name, timeout):
+        from bleak import BleakClient, BleakScanner  # type: ignore
+
+        device = await BleakScanner.find_device_by_filter(lambda d, _adv: (d.name or "") == name, timeout=timeout)
+        if device is None:
+            raise RuntimeError("no device named " + repr(name) + " found within " + str(timeout) + "s")
+        self._client = BleakClient(device)
+        await self._client.connect()
+        # Find our characteristics. UUIDs are stored as 128-bit bytes in ble_ota.py;
+        # bleak expects UUID strings. We compare by exact bytes -> string conversion.
+        self._control_uuid = _uuid_to_str(b"\x00\xff\x10\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+        self._status_uuid = _uuid_to_str(b"\x00\xff\x10\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+        await self._client.start_notify(self._status_uuid, self._notify)
+
+    async def disconnect(self):
+        if self._client is not None:
+            try:
+                await self._client.disconnect()
+            except Exception:
+                pass
+
+    async def write_control(self, frame):
+        if self._client is None:
+            raise RuntimeError("transport not connected")
+        await self._client.write_gatt_char(self._control_uuid, frame, response=False)
+
+    def on_status(self, cb):
+        self._status_cb = cb
+
+    def _notify(self, _char, data):
+        if self._status_cb is not None:
+            self._status_cb(bytes(data))
+
+
+def _uuid_to_str(b):
+    h = b.hex()
+    return f"{h[0:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
 
 
 if __name__ == "__main__":
