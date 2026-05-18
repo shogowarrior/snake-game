@@ -22,6 +22,10 @@ from sim import fake_machine, fake_neopixel  # noqa: E402
 sys.modules["machine"] = fake_machine
 sys.modules["neopixel"] = fake_neopixel
 
+from sim import fake_bluetooth  # noqa: E402
+
+sys.modules["bluetooth"] = fake_bluetooth
+
 # Headless: don't open a pygame window during tests.
 from sim import screen  # noqa: E402
 
