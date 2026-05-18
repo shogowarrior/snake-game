@@ -15,6 +15,7 @@ from ble_protocol import (
     NACK_PROTECTED,
     OP_ABORT,
     OP_BEGIN_FILE,
+    OP_COMMITTED,
     OP_END_FILE,
     OP_FILE_CHUNK,
     OP_NACK,
@@ -100,7 +101,7 @@ def _nack_reason(frame):
     return frame[5] if len(frame) >= 6 else None
 
 
-def test_happy_path_writes_files_to_staging(chdir_tmp):
+def test_happy_path_writes_files_to_staging(chdir_tmp, no_soft_reset):
     files = [
         ("main.py", b"print('new')"),
         ("common/engine.py", b"# engine"),
@@ -108,11 +109,9 @@ def test_happy_path_writes_files_to_staging(chdir_tmp):
     s = ble_ota.Session()
     statuses = feed(s, list(encode_session(files)))
 
-    # Files should exist in .staging/ after END_FILE for each.
+    # After commit, files live at the device root (== tmp_path); .staging is wiped.
     for path, expected in files:
-        staged = chdir_tmp / STAGING_DIR / path
-        assert staged.exists(), "missing " + str(staged)
-        assert staged.read_bytes() == expected
+        assert (chdir_tmp / path).read_bytes() == expected
 
     # State should have walked all the way to COMMITTED.
     assert s.state == ble_ota.STATE_COMMITTED
@@ -153,3 +152,66 @@ def test_staging_dir_is_cleaned_on_abort(chdir_tmp):
     assert s.state == ble_ota.STATE_ABORTED
     # Staging dir should be wiped on abort.
     assert not (chdir_tmp / STAGING_DIR).exists()
+
+
+def test_commit_renames_staging_files_into_place(chdir_tmp, no_soft_reset):
+    files = [
+        ("main.py", b"print('new')"),
+        ("common/engine.py", b"# new engine"),
+    ]
+    s = ble_ota.Session()
+    feed(s, list(encode_session(files)))
+    # After commit, files live at the device root (== tmp_path), not in .staging.
+    for path, expected in files:
+        assert (chdir_tmp / path).read_bytes() == expected
+    assert not (chdir_tmp / STAGING_DIR).exists()
+    assert s.state == ble_ota.STATE_COMMITTED
+    no_soft_reset.assert_called_once()
+
+
+def test_manifest_deletes_files_not_in_manifest(chdir_tmp, no_soft_reset):
+    # Pre-existing files in scope, only one of which is in the new manifest.
+    (chdir_tmp / "common").mkdir()
+    (chdir_tmp / "common" / "old.py").write_text("# stale")
+    (chdir_tmp / "common" / "engine.py").write_text("# old engine")
+    (chdir_tmp / "main.py").write_text("# old main")
+
+    files = [
+        ("main.py", b"# new main"),
+        ("common/engine.py", b"# new engine"),
+    ]
+    s = ble_ota.Session()
+    feed(s, list(encode_session(files)))
+
+    assert (chdir_tmp / "main.py").read_bytes() == b"# new main"
+    assert (chdir_tmp / "common" / "engine.py").read_bytes() == b"# new engine"
+    assert not (chdir_tmp / "common" / "old.py").exists()
+
+
+def test_protected_files_never_deleted_by_commit(chdir_tmp, no_soft_reset):
+    # high_score.txt sits at root and is not in any manifest. It must survive.
+    (chdir_tmp / "high_score.txt").write_text("42")
+
+    files = [("main.py", b"# new")]
+    s = ble_ota.Session()
+    feed(s, list(encode_session(files)))
+
+    assert (chdir_tmp / "high_score.txt").read_text() == "42"
+
+
+def test_commit_emits_committed_status(chdir_tmp, no_soft_reset):
+    files = [("main.py", b"x")]
+    s = ble_ota.Session()
+    statuses = feed(s, list(encode_session(files)))
+    assert any(st[0] == OP_COMMITTED for st in statuses)
+
+
+def test_commit_pass_handles_empty_manifest(chdir_tmp, no_soft_reset):
+    # MANIFEST with no paths after zero files. Edge case: no files transferred,
+    # client sends empty manifest + COMMIT (clears everything in allowlist).
+    (chdir_tmp / "main.py").write_text("# old")
+    frames = list(encode_session([]))
+    s = ble_ota.Session()
+    feed(s, frames)
+    assert not (chdir_tmp / "main.py").exists()
+    assert s.state == ble_ota.STATE_COMMITTED

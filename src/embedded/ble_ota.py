@@ -20,11 +20,15 @@ from ble_protocol import (
     OP_ACK,
     OP_BEGIN_FILE,
     OP_COMMIT,
+    OP_COMMITTED,
     OP_END_FILE,
     OP_FILE_CHUNK,
     OP_MANIFEST,
     OP_NACK,
+    PROTECTED_FILES,
     STAGING_DIR,
+    SYNCED_DIRS,
+    SYNCED_TOP_LEVEL_GLOBS,
     FrameTooLarge,
     InvalidFrame,
     InvalidPath,
@@ -180,9 +184,15 @@ class Session:
         if self.state != STATE_AWAITING_COMMIT:
             self._abort(NACK_OUT_OF_ORDER, last_seq=seq)
             return
-        # Actual commit pass is added in Task 10. For now: just transition.
-        self.state = STATE_COMMITTED
+        try:
+            _commit_pass(self._manifest)
+        except OSError:
+            self._abort(NACK_WRITE_FAILED, last_seq=seq)
+            return
         self._ack(seq)
+        self.on_status(encode_frame(OP_COMMITTED, seq, b""))
+        self.state = STATE_COMMITTED
+        _soft_reset()
 
     def _on_client_abort(self, seq):
         # Client-initiated; not a NACK situation. Just clean up.
@@ -274,3 +284,76 @@ def _isdir(path):
         return (os.stat(path)[0] & 0x4000) != 0  # S_IFDIR
     except OSError:
         return False
+
+
+def _commit_pass(manifest):
+    """Promote .staging/ files to root, prune anything in allowlist not in manifest."""
+    import os
+
+    # 1. Rename staged files into place.
+    for path in manifest:
+        staged = STAGING_DIR + "/" + path
+        if _exists(staged):
+            _ensure_parent_dirs(path)
+            # Remove any existing destination first; some MicroPython os.rename
+            # variants refuse to overwrite.
+            if _exists(path) and not _isdir(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+            os.rename(staged, path)
+
+    # 2. Delete orphans in scope.
+    manifest_set = set(manifest)
+    for path in _list_allowlist_files():
+        if path in PROTECTED_FILES:
+            continue
+        if path in manifest_set:
+            continue
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+    # 3. Clean staging.
+    _wipe_staging()
+
+
+def _list_allowlist_files():
+    """Yield existing paths under the synced-dirs allowlist (relative)."""
+    import os
+
+    # Top-level *.py
+    try:
+        for name in os.listdir("."):
+            if _isdir(name):
+                continue
+            if any(_glob_match(name, g) for g in SYNCED_TOP_LEVEL_GLOBS):
+                yield name
+    except OSError:
+        pass
+    # One level deep under each SYNCED_DIRS entry
+    for d in SYNCED_DIRS:
+        try:
+            for name in os.listdir(d):
+                child = d + "/" + name
+                if _isdir(child):
+                    continue
+                yield child
+        except OSError:
+            pass
+
+
+def _glob_match(name, pattern):
+    if pattern.startswith("*."):
+        ext = pattern[1:]
+        return name.endswith(ext) and len(name) > len(ext)
+    return name == pattern
+
+
+def _soft_reset():
+    """Indirection so tests can monkey-patch machine.soft_reset."""
+    import machine  # type: ignore
+
+    machine.soft_reset()
