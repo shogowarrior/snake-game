@@ -1,240 +1,215 @@
 from time import sleep
 
 import neopixel  # type: ignore
-from config import ROTATION, SCORE_GRADIENT_END, SCORE_GRADIENT_START
+from config import (
+    BRIGHTNESS,
+    FOOD_HEARTBEAT,
+    NEOPIXEL_PIN,
+    ROTATION,
+)
+from glyphs import GLYPHS
 from machine import Pin  # type: ignore
 
 from common.colors import gradient_color
 
+__all__ = [
+    "BLACK",
+    "Display",
+    "NUM_PIXELS",
+    "WHITE",
+]
+
 WHITE = (128, 128, 128)
 BLACK = (0, 0, 0)
-GREEN = (0, 128, 0)
-RED = (128, 0, 0)
-BLUE = (0, 0, 128)
 
-NEOPIXEL_PIN = 13
 NUM_PIXELS = 256
-NP = neopixel.NeoPixel(Pin(NEOPIXEL_PIN), NUM_PIXELS)
-
-
-# ---------------------------------------------------------------------------
-# Framebuffer. Drawers write to `_fb` in natural (x, y) coords with no
-# rotation or wiring awareness. `flush()` (added later) is the only thing
-# that touches NP[].
-# ---------------------------------------------------------------------------
-_fb = [(0, 0, 0)] * 256  # flat: _fb[y * 16 + x]
-
-
-def set_pixel(x, y, color):
-    """Set framebuffer cell (x, y) to `color` (an (r, g, b) tuple).
-    Out-of-range (x, y) is silently ignored."""
-    if 0 <= x < 16 and 0 <= y < 16:
-        _fb[y * 16 + x] = color
-
-
-def clear():
-    """Reset all 256 framebuffer cells to (0, 0, 0)."""
-    for i in range(256):
-        _fb[i] = (0, 0, 0)
+_VALID_ROTATIONS = (0, 90, 180, 270)
 
 
 def _compute_lut(rotation):
     """Build the framebuffer-index → NP-index mapping for a given rotation.
 
-    Called once at module load (and from tests). For each framebuffer cell
-    (x, y), determine the panel cell (px, py) after rotation, then the flat
-    NP index via the serpentine wiring (odd panel rows run right-to-left).
+    Rotation is in degrees, clockwise (0, 90, 180, 270). For each framebuffer
+    cell (x, y), determine the panel cell (px, py) after rotation, then the
+    flat NP index via the column-serpentine wiring (odd columns run bottom-to-top).
     """
+    if rotation not in _VALID_ROTATIONS:
+        raise ValueError("rotation must be 0|90|180|270, got " + repr(rotation))
     lut = [0] * 256
     for y in range(16):
         for x in range(16):
-            if rotation == "0":
+            if rotation == 0:
                 px, py = x, y
-            elif rotation == "90CW":
+            elif rotation == 90:
                 px, py = 15 - y, x
-            elif rotation == "180":
+            elif rotation == 180:
                 px, py = 15 - x, 15 - y
-            else:  # "90CCW"
+            else:  # 270
                 px, py = y, 15 - x
-            np_index = py * 16 + (px if py % 2 == 0 else 15 - px)
+            np_index = px * 16 + (py if px % 2 == 0 else 15 - py)
             lut[y * 16 + x] = np_index
     return lut
 
 
-_lut = _compute_lut(ROTATION)
+def _heartbeat_factor(frame, speed):
+    """Lub-dub-rest envelope returning a brightness multiplier in [0.25, 1.0].
 
-
-def flush():
-    """Push the framebuffer to the LEDs via the precomputed LUT, then NP.write().
-
-    The only place rotation + serpentine apply. Drawers write to _fb in plain
-    (x, y); flush is what makes the pixels show up on the panel.
+    One cycle spans roughly `speed` frames (≈ 1 second of wall time at the
+    engine's current tick rate). The two pulses sit inside the first ~30% of
+    the cycle; the remainder is the resting baseline.
     """
-    for i in range(256):
-        NP[_lut[i]] = _fb[i]
-    NP.write()
+    cycle = speed if speed > 0 else 1
+    t = (frame % cycle) / cycle
+    if t < 0.05:
+        return 0.25 + (1.00 - 0.25) * (t / 0.05)
+    if t < 0.10:
+        return 1.00 - (1.00 - 0.25) * ((t - 0.05) / 0.05)
+    if t < 0.18:
+        return 0.25 + (0.80 - 0.25) * ((t - 0.10) / 0.08)
+    if t < 0.26:
+        return 0.80 - (0.80 - 0.25) * ((t - 0.18) / 0.08)
+    return 0.25
 
 
-# Character patterns (5x3 grid for each character)
-digits = {
-    "0": [(1, 1, 1), (1, 0, 1), (1, 0, 1), (1, 0, 1), (1, 1, 1)],
-    "1": [(0, 1, 0), (1, 1, 0), (0, 1, 0), (0, 1, 0), (1, 1, 1)],
-    "2": [(1, 1, 1), (0, 0, 1), (1, 1, 1), (1, 0, 0), (1, 1, 1)],
-    "3": [(1, 1, 1), (0, 0, 1), (1, 1, 1), (0, 0, 1), (1, 1, 1)],
-    "4": [(1, 0, 1), (1, 0, 1), (1, 1, 1), (0, 0, 1), (0, 0, 1)],
-    "5": [(1, 1, 1), (1, 0, 0), (1, 1, 1), (0, 0, 1), (1, 1, 1)],
-    "6": [(1, 1, 1), (1, 0, 0), (1, 1, 1), (1, 0, 1), (1, 1, 1)],
-    "7": [(1, 1, 1), (0, 0, 1), (0, 0, 1), (0, 1, 0), (0, 1, 0)],
-    "8": [(1, 1, 1), (1, 0, 1), (1, 1, 1), (1, 0, 1), (1, 1, 1)],
-    "9": [(1, 1, 1), (1, 0, 1), (1, 1, 1), (0, 0, 1), (1, 1, 1)],
-}
+class Display:
+    """Owns the NeoPixel handle, the framebuffer, the rotation LUT, and the
+    render-loop caches. All mutable display state lives here — no module-level
+    state, no `global` keyword. Instantiate once per process and pass to
+    consumers (`SnakeGame`).
 
-characters = {
-    "A": [(1, 1, 1), (1, 0, 1), (1, 1, 1), (1, 0, 1), (1, 0, 1)],
-    "B": [(1, 1, 0), (1, 0, 1), (1, 1, 0), (1, 0, 1), (1, 1, 0)],
-    "C": [(0, 1, 1), (1, 0, 0), (1, 0, 0), (1, 0, 0), (0, 1, 1)],
-    "D": [(1, 1, 0), (1, 0, 1), (1, 0, 1), (1, 0, 1), (1, 1, 0)],
-    "E": [(1, 1, 1), (1, 0, 0), (1, 1, 1), (1, 0, 0), (1, 1, 1)],
-    "F": [(1, 1, 1), (1, 0, 0), (1, 1, 1), (1, 0, 0), (1, 0, 0)],
-    "G": [(0, 1, 1), (1, 0, 0), (1, 0, 1), (1, 0, 1), (0, 1, 1)],
-    "H": [(1, 0, 1), (1, 0, 1), (1, 1, 1), (1, 0, 1), (1, 0, 1)],
-    "I": [(1, 1, 1), (0, 1, 0), (0, 1, 0), (0, 1, 0), (1, 1, 1)],
-    "J": [(0, 0, 1), (0, 0, 1), (0, 0, 1), (1, 0, 1), (0, 1, 1)],
-    "K": [(1, 0, 1), (1, 0, 1), (1, 1, 0), (1, 0, 1), (1, 0, 1)],
-    "L": [(1, 0, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0), (1, 1, 1)],
-    "M": [(1, 0, 1), (1, 1, 1), (1, 0, 1), (1, 0, 1), (1, 0, 1)],
-    "N": [(1, 0, 1), (1, 1, 1), (1, 1, 1), (1, 0, 1), (1, 0, 1)],
-    "O": [(0, 1, 0), (1, 0, 1), (1, 0, 1), (1, 0, 1), (0, 1, 0)],
-    "P": [(1, 1, 0), (1, 0, 1), (1, 1, 0), (1, 0, 0), (1, 0, 0)],
-    "Q": [(0, 1, 0), (1, 0, 1), (1, 0, 1), (1, 1, 0), (0, 1, 1)],
-    "R": [(1, 1, 0), (1, 0, 1), (1, 1, 0), (1, 1, 0), (1, 0, 1)],
-    "S": [(0, 1, 1), (1, 0, 0), (0, 1, 1), (0, 0, 1), (1, 1, 0)],
-    "T": [(1, 1, 1), (0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)],
-    "U": [(1, 0, 1), (1, 0, 1), (1, 0, 1), (1, 0, 1), (0, 1, 1)],
-    "V": [(1, 0, 1), (1, 0, 1), (1, 0, 1), (0, 1, 0), (0, 1, 0)],
-    "W": [(1, 0, 1), (1, 0, 1), (1, 0, 1), (1, 1, 1), (1, 0, 1)],
-    "X": [(1, 0, 1), (1, 0, 1), (0, 1, 0), (1, 0, 1), (1, 0, 1)],
-    "Y": [(1, 0, 1), (1, 0, 1), (0, 1, 0), (0, 1, 0), (0, 1, 0)],
-    "Z": [(1, 1, 1), (0, 0, 1), (0, 1, 0), (1, 0, 0), (1, 1, 1)],
-}
-
-special_chars = {
-    "!": [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 0, 0), (0, 1, 0)],
-    "?": [(1, 1, 1), (0, 0, 1), (0, 1, 1), (0, 0, 0), (0, 1, 0)],
-    ".": [(0, 0, 0), (0, 0, 0), (0, 0, 0), (0, 0, 0), (0, 1, 0)],
-    "-": [(0, 0, 0), (0, 0, 0), (1, 1, 1), (0, 0, 0), (0, 0, 0)],
-    "+": [(0, 1, 0), (0, 1, 0), (1, 1, 1), (0, 1, 0), (0, 1, 0)],
-    "=": [(0, 0, 0), (1, 1, 1), (0, 0, 0), (1, 1, 1), (0, 0, 0)],
-    ":": [(0, 0, 0), (0, 1, 0), (0, 0, 0), (0, 1, 0), (0, 0, 0)],
-    ",": [(0, 0, 0), (0, 0, 0), (0, 0, 0), (0, 1, 0), (1, 0, 0)],
-    "#": [(0, 1, 0), (1, 1, 1), (0, 1, 0), (1, 1, 1), (0, 1, 0)],
-    "*": [(1, 0, 1), (0, 1, 0), (1, 1, 1), (0, 1, 0), (1, 0, 1)],
-    "/": [(0, 0, 1), (0, 1, 0), (0, 1, 0), (1, 0, 0), (0, 0, 0)],
-    "\\": [(1, 0, 0), (0, 1, 0), (0, 1, 0), (0, 0, 1), (0, 0, 0)],
-    "@": [(1, 1, 1), (1, 1, 0), (1, 1, 1), (1, 0, 1), (1, 1, 1)],
-    " ": [(0, 0, 0), (0, 0, 0), (0, 0, 0), (0, 0, 0), (0, 0, 0)],  # Empty space
-}
-
-
-# Text drawing routes through the framebuffer (set_pixel) so it has no
-# knowledge of rotation or wiring. `scale` blows each pattern pixel up to a
-# scale x scale block. `color` may be an (r, g, b) tuple OR a callable
-# `(x, y) -> (r, g, b)` for per-pixel coloring (gradients).
-def display_char(char, offset_x=0, offset_y=0, color=WHITE, scale=1):
-    char = char.upper()
-    pattern = characters.get(char) or digits.get(char) or special_chars.get(char)
-    if pattern is None:
-        return
-
-    color_is_callable = callable(color)
-    for row_idx, row in enumerate(pattern):
-        for col_idx, pixel in enumerate(row):
-            if not pixel:
-                continue
-            for dx in range(scale):
-                for dy in range(scale):
-                    x = offset_x + col_idx * scale + dx
-                    y = offset_y + row_idx * scale + dy
-                    if 0 <= x < 16 and 0 <= y < 16:
-                        set_pixel(x, y, color(x, y) if color_is_callable else color)
-
-
-def display_message(message, offset_x=0, offset_y=0, color=WHITE, scale=1):
-    advance = 4 * scale  # 3-col glyph + 1-col padding, both scaled
-    for char in message:
-        display_char(char, offset_x, offset_y, color, scale)
-        offset_x += advance
-        if offset_x >= 16:
-            break
-    flush()
-
-
-# Game-over score: centered, horizontally gradient-colored. Drawn into the
-# framebuffer in natural coordinates — rotation is applied by flush() (via
-# config.ROTATION), uniformly with the snake/food.
-def display_scores(high_score, current_score):
-    score_str = str(current_score)
-    scale = 2
-    # 4*scale per char, minus the trailing padding after the last char.
-    width = len(score_str) * 4 * scale - scale
-    offset_x = max(0, (16 - width) // 2)
-    offset_y = (16 - 5 * scale) // 2
-    left = offset_x
-
-    def gradient(x, _y):
-        return gradient_color(x - left, width, SCORE_GRADIENT_START, SCORE_GRADIENT_END)
-
-    clear()
-    display_message(score_str, offset_x, offset_y, gradient, scale=scale)
-    # High score hidden for now — re-enable when layout is ready:
-    # display_message(f"H:{high_score}", 1, 1, GREEN)
-
-
-# Render-loop caches. Module state, not class state — `display.py` owns the
-# only NeoPixel object and is the only place that draws.
-_prev_snake_cells = set()
-_gradient_colors = []
-_previous_snake_length = 0
-
-
-def draw_snake(engine, palette):
-    """Paint one frame: snake gradient + food cell. Sleeps for the engine tick.
-
-    palette is (start_color, end_color, food_color, speed) — provided by the
-    embedded SnakeGame each frame.
+    Drawers call `set_pixel` to write into `_fb` in natural (x, y) coords;
+    `flush` is the only thing that applies rotation + serpentine wiring and
+    pushes pixels to the LEDs.
     """
-    global _prev_snake_cells, _gradient_colors, _previous_snake_length  # noqa: PLW0603
 
-    start_color, end_color, food_color, speed = palette
-    cur = set(engine.snake)
+    def __init__(self):
+        self.np = neopixel.NeoPixel(Pin(NEOPIXEL_PIN), NUM_PIXELS)
+        self._fb = [(0, 0, 0)] * NUM_PIXELS  # flat: _fb[y * 16 + x]
+        self._lut = _compute_lut(ROTATION)
+        self._prev_snake_cells = set()
+        self._gradient_colors = []
+        self._previous_snake_length = 0
 
-    snake_length = len(engine.snake)
-    if snake_length != _previous_snake_length:
-        _gradient_colors = [gradient_color(i, snake_length, start_color, end_color) for i in range(snake_length)]
-        _previous_snake_length = snake_length
+    def set_pixel(self, x, y, color):
+        """Set framebuffer cell (x, y) to `color`. Out-of-range silently ignored."""
+        if 0 <= x < 16 and 0 <= y < 16:
+            self._fb[y * 16 + x] = color
 
-    # Clear cells that were snake last frame but aren't now.
-    for x, y in _prev_snake_cells - cur:
-        set_pixel(x, y, BLACK)
+    def clear(self):
+        """Reset all 256 framebuffer cells to (0, 0, 0)."""
+        for i in range(NUM_PIXELS):
+            self._fb[i] = (0, 0, 0)
 
-    # Repaint current snake cells.
-    for i, (x, y) in enumerate(engine.snake):
-        set_pixel(x, y, _gradient_colors[i])
+    def flush(self):
+        """Push the framebuffer to the LEDs via the LUT, then NP.write().
 
-    # Food pixel.
-    fx, fy = engine.food
-    set_pixel(fx, fy, food_color)
+        The only place rotation + serpentine apply, and the chokepoint where
+        config.BRIGHTNESS is folded in so it scales snake, food, and score
+        uniformly.
+        """
+        np, fb, lut = self.np, self._fb, self._lut
+        if BRIGHTNESS >= 1.0:
+            for i in range(NUM_PIXELS):
+                np[lut[i]] = fb[i]
+        else:
+            for i in range(NUM_PIXELS):
+                r, g, b = fb[i]
+                np[lut[i]] = (int(r * BRIGHTNESS), int(g * BRIGHTNESS), int(b * BRIGHTNESS))
+        np.write()
 
-    flush()
-    _prev_snake_cells = cur
-    sleep(1 / speed)
+    def display_char(self, char, offset_x=0, offset_y=0, color=WHITE, scale=1):
+        """Draw one 5x3 glyph into the framebuffer at (offset_x, offset_y).
 
+        `color` may be an (r, g, b) tuple or a callable `(x, y) -> (r, g, b)`
+        for per-pixel coloring (gradients).
+        """
+        pattern = GLYPHS.get(char.upper())
+        if pattern is None:
+            return
 
-def reset_draw_caches():
-    """Call between games so the new game starts blank with fresh caches."""
-    global _prev_snake_cells, _gradient_colors, _previous_snake_length  # noqa: PLW0603
-    _prev_snake_cells = set()
-    _gradient_colors = []
-    _previous_snake_length = 0
-    clear()
-    flush()
+        color_is_callable = callable(color)
+        for row_idx, row in enumerate(pattern):
+            for col_idx, pixel in enumerate(row):
+                if not pixel:
+                    continue
+                for dx in range(scale):
+                    for dy in range(scale):
+                        x = offset_x + col_idx * scale + dx
+                        y = offset_y + row_idx * scale + dy
+                        if 0 <= x < 16 and 0 <= y < 16:
+                            self.set_pixel(x, y, color(x, y) if color_is_callable else color)
+
+    def display_message(self, message, offset_x=0, offset_y=0, color=WHITE, scale=1):
+        """Draw a string of glyphs left-to-right, then flush to the LEDs."""
+        advance = 4 * scale  # 3-col glyph + 1-col padding, both scaled
+        for char in message:
+            self.display_char(char, offset_x, offset_y, color, scale)
+            offset_x += advance
+            if offset_x >= 16:
+                break
+        self.flush()
+
+    def display_scores(self, current_score, start_color, end_color):
+        """Game-over score: centered, horizontally gradient-colored.
+
+        Gradient runs start_color -> end_color (the snake's head/tail hues).
+        Drawn into the framebuffer in natural coordinates — rotation is
+        applied by flush() (via config.ROTATION), uniformly with snake/food.
+        """
+        score_str = str(current_score)
+        scale = 2
+        width = len(score_str) * 4 * scale - scale
+        offset_x = max(0, (16 - width) // 2)
+        offset_y = (16 - 5 * scale) // 2
+        left = offset_x
+
+        def gradient(x, _y):
+            return gradient_color(x - left, width, start_color, end_color)
+
+        self.clear()
+        self.display_message(score_str, offset_x, offset_y, gradient, scale=scale)
+
+    def draw_snake(self, engine, palette):
+        """Paint one frame: snake gradient + food cell. Sleeps for the engine tick.
+
+        palette is (start_color, end_color, food_color, speed) — provided by the
+        embedded SnakeGame each frame.
+        """
+        start_color, end_color, food_color, speed = palette
+        cur = set(engine.snake)
+
+        snake_length = len(engine.snake)
+        if snake_length != self._previous_snake_length:
+            self._gradient_colors = [
+                gradient_color(i, snake_length, start_color, end_color) for i in range(snake_length)
+            ]
+            self._previous_snake_length = snake_length
+
+        # Clear cells that were snake last frame but aren't now.
+        for x, y in self._prev_snake_cells - cur:
+            self.set_pixel(x, y, BLACK)
+
+        # Repaint current snake cells.
+        for i, (x, y) in enumerate(engine.snake):
+            self.set_pixel(x, y, self._gradient_colors[i])
+
+        # Food pixel — optionally pulsed like a heartbeat (phase from engine.frame).
+        fx, fy = engine.food
+        if FOOD_HEARTBEAT:
+            f = _heartbeat_factor(engine.frame, speed)
+            fr, fg, fb = food_color
+            self.set_pixel(fx, fy, (int(fr * f), int(fg * f), int(fb * f)))
+        else:
+            self.set_pixel(fx, fy, food_color)
+
+        self.flush()
+        self._prev_snake_cells = cur
+        sleep(1 / speed)
+
+    def reset_draw_caches(self):
+        """Call between games so the new game starts blank with fresh caches."""
+        self._prev_snake_cells = set()
+        self._gradient_colors = []
+        self._previous_snake_length = 0
+        self.clear()
+        self.flush()

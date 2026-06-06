@@ -1,16 +1,23 @@
 """User-tunable constants for the embedded build.
 
 Anything in this file is something a human might want to flip without reading
-display.py. Hardware-wiring constants (NEOPIXEL_PIN, NUM_PIXELS) intentionally
-stay in display.py since they're fixed by the solder.
+display.py.
 """
 
-# Mounting rotation. One global value applied uniformly to everything drawn on
-# the panel (snake, food, score). Pick the value that makes the score read
-# upright in your physical setup, then commit. Changing this requires a re-flash.
-ROTATION = "0"  # "0" | "90CW" | "180" | "90CCW"
+# GPIO pin the NeoPixel matrix DIN is wired to. Change to match your board.
+NEOPIXEL_PIN = 13
 
-# Score-text gradient (game-over screen). The score's lit pixels fade from
-# START on the left to END on the right across the message's bounding box.
-SCORE_GRADIENT_START = (0, 120, 220)  # cool blue
-SCORE_GRADIENT_END = (220, 0, 140)  # magenta
+# Global brightness scale (0.0 - 1.0) applied to every pixel inside flush().
+BRIGHTNESS = 1.0
+
+# Mounting rotation in degrees clockwise; pick what reads upright. Re-flash to change.
+ROTATION = 0  # 0 | 90 | 180 | 270
+
+# Game tick rate in frames per second. Higher = faster snake.
+SPEED = 50
+
+# Seconds to hold the game-over score on screen before starting a new game.
+SCORE_DISPLAY_SECONDS = 2
+
+# Pulse the food cell like a heartbeat (lub-dub + rest). False = steady pixel.
+FOOD_HEARTBEAT = True

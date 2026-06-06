@@ -25,15 +25,15 @@ def _init():
 
 
 def _index_to_physical(i):
-    """Inverse of the serpentine in embedded/display.py: index -> (px, py).
+    """Inverse of the column-serpentine in embedded/display.py: index -> (px, py).
 
     The embedded code already rotated game-space and applied serpentine before
     indexing, so drawing at (px, py) renders the panel as the user would see
     it physically.
     """
-    py = i // SIZE
+    px = i // SIZE
     off = i % SIZE
-    px = off if py % 2 == 0 else (SIZE - 1 - off)
+    py = off if px % 2 == 0 else (SIZE - 1 - off)
     return px, py
 
 

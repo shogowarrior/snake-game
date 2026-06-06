@@ -1,6 +1,6 @@
 from random import random, uniform
 
-from display import display_scores, draw_snake, reset_draw_caches
+from config import SCORE_DISPLAY_SECONDS, SPEED
 from greedy_policy import GreedyPolicy
 from learned_policy import LearnedPolicy
 
@@ -8,7 +8,6 @@ from common.colors import hsv_to_rgb
 from common.engine import SnakeEngine
 
 GAME_SIZE = 16
-DEFAULT_SPEED = 50
 HIGH_SCORE_FILE = "high_score.txt"
 
 _POLICIES = {
@@ -35,13 +34,14 @@ def save_high_score(value):
 
 class SnakeGame:
     """Embedded adapter: drives a SnakeEngine with a Policy, renders gradient
-    snake + food via display.draw_snake, persists high score on game-over.
+    snake + food via the injected Display, persists high score on game-over.
     """
 
-    def __init__(self, policy_name="greedy", speed=DEFAULT_SPEED):
+    def __init__(self, *, display, policy_name="greedy", speed=SPEED):
         if policy_name not in _POLICIES:
             raise ValueError("Unknown policy: " + repr(policy_name) + ". Valid: " + ", ".join(sorted(_POLICIES)))
 
+        self.display = display
         self.engine = SnakeEngine(size=GAME_SIZE)
         self.policy = _POLICIES[policy_name]()
         self.speed = speed
@@ -51,7 +51,7 @@ class SnakeGame:
         self.end_color = hsv_to_rgb(random(), 1.0, uniform(0.08, 0.25))
         self.food_color = self._new_food_color()
 
-        reset_draw_caches()
+        self.display.reset_draw_caches()
 
     def _new_food_color(self):
         return hsv_to_rgb(random(), 1.0, uniform(0.55, 0.85))
@@ -69,7 +69,7 @@ class SnakeGame:
         if self.engine.food != prev_food:
             self.food_color = self._new_food_color()
 
-        draw_snake(self.engine, self._palette())
+        self.display.draw_snake(self.engine, self._palette())
 
     def start_game(self):
         self.engine.score = 0
@@ -79,9 +79,7 @@ class SnakeGame:
         from time import sleep
 
         current_score = self.engine.score
-        high_score = load_high_score()
-        if current_score > high_score:
+        if current_score > load_high_score():
             save_high_score(current_score)
-            high_score = current_score
-        display_scores(high_score, current_score)
-        sleep(5)
+        self.display.display_scores(current_score, self.start_color, self.end_color)
+        sleep(SCORE_DISPLAY_SECONDS)
