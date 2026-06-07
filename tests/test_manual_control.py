@@ -14,8 +14,8 @@ class StubController:
         return self._scripts.pop(0)
 
 
-def _game(scripts, mode="manual", speed=20):
-    state = game.ControlState(mode=mode, speed=speed)
+def _game(scripts, auto=False, speed=20):
+    state = game.ControlState(auto=auto, speed=speed)
     return game.SnakeGame(
         display=display.Display(),
         controller=StubController(scripts),
@@ -31,9 +31,9 @@ def test_manual_dpad_sets_direction():
 
 
 def test_select_toggles_mode():
-    g = _game([({"SELECT"}, {"SELECT"})], mode="auto")
+    g = _game([({"SELECT"}, {"SELECT"})], auto=True)
     g.tick()
-    assert g.state.mode == "manual"
+    assert g.state.auto is False
 
 
 def test_speed_up_steps_and_clamps():
@@ -57,3 +57,49 @@ def test_start_signals_reset_without_stepping():
     frame_before = g.engine.frame
     assert g.tick() is True
     assert g.engine.frame == frame_before
+
+
+def _palette_speed(g):
+    return g._palette()[3]
+
+
+def test_hold_direction_rushes():
+    g = _game([(set(), {"UP"})], speed=20)
+    g.tick()
+    assert _palette_speed(g) == 20 * game.RUSH_MULTIPLIER
+
+
+def test_no_rush_when_no_direction_held():
+    g = _game([(set(), set())], speed=20)
+    g.tick()
+    assert _palette_speed(g) == 20
+
+
+def test_auto_mode_does_not_rush():
+    g = _game([(set(), {"UP"})], auto=True, speed=20)
+    g.tick()
+    assert _palette_speed(g) == 20
+
+
+def test_rush_stops_after_release():
+    g = _game([(set(), {"UP"}), (set(), set())], speed=20)
+    g.tick()
+    assert _palette_speed(g) == 20 * game.RUSH_MULTIPLIER
+    g.tick()
+    assert _palette_speed(g) == 20
+
+
+def test_manual_reset_preserves_high_score(monkeypatch):
+    saved = []
+    monkeypatch.setattr(game, "load_high_score", lambda: 3)
+    monkeypatch.setattr(game, "save_high_score", saved.append)
+    g = _game([(set(), set())])
+
+    g.engine.score = 7
+    g.maybe_save_high_score()
+    assert saved == [7]
+
+    saved.clear()
+    g.engine.score = 1
+    g.maybe_save_high_score()
+    assert saved == []

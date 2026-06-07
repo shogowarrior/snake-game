@@ -1,9 +1,10 @@
 from random import random, uniform
 
 from config import (
-    CONTROL_MODE,
+    AUTO_MODE,
     FOOD_BLINK,
     FOOD_BLINK_FRAMES,
+    RUSH_MULTIPLIER,
     SCORE_DISPLAY_SECONDS,
     SPEED,
     SPEED_MAX,
@@ -44,8 +45,8 @@ def _dpad_direction(held):
 class ControlState:
     """Mode + live speed shared across games so SELECT/A/B persist past a death."""
 
-    def __init__(self, mode=CONTROL_MODE, speed=SPEED):
-        self.mode = mode
+    def __init__(self, auto=AUTO_MODE, speed=SPEED):
+        self.auto = auto
         self.speed = speed
 
 
@@ -78,10 +79,8 @@ class SnakeGame:
         self.engine = SnakeEngine(size=GAME_SIZE)
         self.policy = _POLICIES[policy_name]()
         self.controller = controller
-        if state is None and controller is not None:
-            state = ControlState(speed=speed)
-        self.state = state
-        self.speed = state.speed if state is not None else speed
+        self.state = state if state is not None else ControlState(speed=speed)
+        self._rushing = False
 
         # Per-game two-hue palette: start_color -> head (bright), end_color -> tail (dim).
         self.start_color = hsv_to_rgb(random(), 1.0, uniform(0.55, 1.00))
@@ -105,23 +104,26 @@ class SnakeGame:
         return (int(r * factor), int(g * factor), int(b * factor))
 
     def _palette(self):
-        return (self.start_color, self.end_color, self._food_render_color(), self.speed)
+        speed = self.state.speed * RUSH_MULTIPLIER if self._rushing else self.state.speed
+        return (self.start_color, self.end_color, self._food_render_color(), speed)
 
     def _handle_input(self):
         """Apply controller input. Returns (direction, reset): reset True means START."""
         edges, held = self.controller.poll()
         if "SELECT" in edges:
-            self.state.mode = "manual" if self.state.mode == "auto" else "auto"
+            self.state.auto = not self.state.auto
         if "A" in edges:
             self.state.speed = min(SPEED_MAX, self.state.speed + SPEED_STEP)
         if "B" in edges:
             self.state.speed = max(SPEED_MIN, self.state.speed - SPEED_STEP)
-        self.speed = self.state.speed
         if "START" in edges:
             return None, True
-        if self.state.mode == "manual":
-            return _dpad_direction(held), False
-        return self.policy.decide(self.engine), False
+        if self.state.auto:
+            self._rushing = False
+            return self.policy.decide(self.engine), False
+        direction = _dpad_direction(held)
+        self._rushing = direction is not None  # held D-pad -> momentary rush
+        return direction, False
 
     def tick(self):
         """One frame: input/policy -> engine -> renderer. Returns True if START was pressed."""
@@ -148,11 +150,13 @@ class SnakeGame:
         self.engine.score = 0
         self.high_score = load_high_score()
 
+    def maybe_save_high_score(self):
+        if self.engine.score > load_high_score():
+            save_high_score(self.engine.score)
+
     def end_game(self):
         from time import sleep
 
-        current_score = self.engine.score
-        if current_score > load_high_score():
-            save_high_score(current_score)
-        self.display.display_scores(current_score, self.start_color, self.end_color)
+        self.maybe_save_high_score()
+        self.display.display_scores(self.engine.score, self.start_color, self.end_color)
         sleep(SCORE_DISPLAY_SECONDS)

@@ -7,6 +7,12 @@ the `display` module.
 
 import display
 import pytest
+from config import BRIGHTNESS
+
+
+def _scaled(color):
+    """Apply the same BRIGHTNESS flush() folds into every pixel."""
+    return tuple(int(c * BRIGHTNESS) for c in color)
 
 
 @pytest.fixture
@@ -110,9 +116,9 @@ def test_flush_copies_fb_to_np_via_lut(d):
 
     d.flush()
 
-    assert d.np[d._lut[0 * 16 + 0]] == (10, 20, 30)
-    assert d.np[d._lut[15 * 16 + 15]] == (40, 50, 60)
-    assert d.np[d._lut[1 * 16 + 3]] == (70, 80, 90)
+    assert d.np[d._lut[0 * 16 + 0]] == _scaled((10, 20, 30))
+    assert d.np[d._lut[15 * 16 + 15]] == _scaled((40, 50, 60))
+    assert d.np[d._lut[1 * 16 + 3]] == _scaled((70, 80, 90))
 
 
 def test_flush_writes_every_cell_not_just_lit_ones(d):
@@ -181,7 +187,7 @@ def test_display_message_calls_flush(d):
 
     # At least one NP cell should be (7, 7, 7) (the lit pixels), and the
     # remaining NP cells should be (0, 0, 0) (cleared by the framebuffer flush).
-    sevens = sum(1 for c in d.np.buf if c == (7, 7, 7))
+    sevens = sum(1 for c in d.np.buf if c == _scaled((7, 7, 7)))
     nines = sum(1 for c in d.np.buf if c == (99, 99, 99))
     assert sevens > 0
     assert nines == 0  # all the pre-pollution got overwritten

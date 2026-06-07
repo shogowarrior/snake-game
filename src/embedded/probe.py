@@ -6,13 +6,13 @@ reports, then fix CONTROLLER_BITS in config.py.
 
 from time import sleep_ms
 
-from config import CONTROLLER_BITS, CONTROLLER_CLOCK, CONTROLLER_DATA, CONTROLLER_LATCH
+from config import CONTROLLER_CLOCK, CONTROLLER_DATA, CONTROLLER_LATCH
 from controller import Controller
 
 
 def run_probe():
     controller = Controller(CONTROLLER_LATCH, CONTROLLER_CLOCK, CONTROLLER_DATA)
-    by_index = {idx: name for name, idx in CONTROLLER_BITS.items()}
+    by_index = controller.by_index
     print("Controller probe — press buttons (Ctrl-C to stop).")
     prev = [0] * 8
     while True:

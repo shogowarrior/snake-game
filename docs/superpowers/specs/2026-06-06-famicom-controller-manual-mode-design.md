@@ -23,6 +23,7 @@ map is configurable and a probe tool reports the real mapping on-device.
 | START         | Reset game immediately (edge-triggered)       |
 | A             | Speed up (+`SPEED_STEP`, clamped to `SPEED_MAX`) |
 | B             | Speed down (−`SPEED_STEP`, clamped to `SPEED_MIN`) |
+| D-pad (held)  | Hold-to-rush: ×`RUSH_MULTIPLIER` tick rate while a direction is held (manual only, momentary) |
 
 `auto` mode = existing greedy/learned AI. `manual` = D-pad drives the engine.
 SELECT/START/A/B work in **both** modes. Dropped from the original ask: "speed
@@ -51,7 +52,7 @@ map, then fix `CONTROLLER_BITS`.
 ### `src/embedded/config.py`
 
 ```python
-CONTROL_MODE = "auto"        # "auto" | "manual" (toggle live with SELECT)
+AUTO_MODE = True             # True = AI, False = controller (toggle live with SELECT)
 CONTROLLER_LATCH = 18
 CONTROLLER_CLOCK = 5
 CONTROLLER_DATA  = 19        # avoids NEOPIXEL_PIN (13)
@@ -64,7 +65,7 @@ SPEED_MAX = 60
 
 ### `src/embedded/game.py`
 
-- `ControlState` (mode + speed) — constructed once in `main.py` so mode and speed
+- `ControlState` (`auto` flag + speed) — constructed once in `main.py` so mode and speed
   **persist across games**.
 - `SnakeGame.__init__` gains `controller` and `state`. `tick()`: poll → apply
   SELECT (toggle), A/B (speed clamp) → if START, return `True` → choose direction

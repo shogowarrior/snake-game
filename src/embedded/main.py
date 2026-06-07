@@ -18,7 +18,9 @@ def run_game():
             if game.tick():  # START pressed
                 reset = True
                 break
-        if not reset:
+        if reset:
+            game.maybe_save_high_score()  # preserve a record even on manual reset
+        else:
             game.end_game()
 
 

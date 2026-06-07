@@ -21,7 +21,7 @@ class Controller:
         self._data = Pin(data, Pin.IN, Pin.PULL_UP)
         self._latch.value(0)
         self._clock.value(0)
-        self._by_index = {idx: name for name, idx in CONTROLLER_BITS.items()}
+        self.by_index = {idx: name for name, idx in CONTROLLER_BITS.items()}
         self._prev = set()
 
     def read_bits(self):
@@ -43,7 +43,7 @@ class Controller:
         curr = set()
         for i in range(8):
             if bits[i]:
-                name = self._by_index.get(i)
+                name = self.by_index.get(i)
                 if name:
                     curr.add(name)
         edges = curr - self._prev

@@ -81,10 +81,11 @@ Implement `decide(self, engine) -> Direction | None` from [src/common/policy.py]
 
 ### Controller and manual mode
 
-A Famicom/NES clone (4021 shift register) can drive the snake. [src/embedded/controller.py](src/embedded/controller.py) exposes `Controller.poll() -> (edges, held)` — edge-triggered names for SELECT/START/A/B, held names for the D-pad. `main.py` constructs one `Controller` and one `ControlState` (mode + live speed) and reuses them across games so mode/speed persist past a death.
+A Famicom/NES clone (4021 shift register) can drive the snake. [src/embedded/controller.py](src/embedded/controller.py) exposes `Controller.poll() -> (edges, held)` — edge-triggered names for SELECT/START/A/B, held names for the D-pad. `main.py` constructs one `Controller` and one `ControlState` (`auto` flag + live speed) and reuses them across games so mode/speed persist past a death.
 
-- Button map: D-pad steers (manual only), SELECT toggles auto⇄manual, START resets immediately (skips the score screen), A/B step speed within `[SPEED_MIN, SPEED_MAX]`. `SnakeGame.tick()` returns `True` on START so `main.py` restarts without `end_game()`.
-- `CONTROL_MODE` and all pins, the bit→button map (`CONTROLLER_BITS`), and speed bounds live in [src/embedded/config.py](src/embedded/config.py). Clone wiring varies — run [src/embedded/probe.py](src/embedded/probe.py) on-device (`mpremote`), press each button, and re-map `CONTROLLER_BITS` from the printed bit indices. DATA uses an internal pull-up so an unwired/idle line reads "released" — no spurious input in auto mode.
+- Button map: D-pad steers (manual only), SELECT toggles auto⇄manual, START resets immediately (saves a high score but skips the score screen), A/B step speed within `[SPEED_MIN, SPEED_MAX]`. `SnakeGame.tick()` returns `True` on START so `main.py` restarts without `end_game()`.
+- Hold-to-rush: holding a D-pad direction (manual mode) multiplies the tick rate by `RUSH_MULTIPLIER` for a momentary burst — `_palette()` scales the rendered speed while `_rushing`, leaving the persisted A/B speed untouched.
+- `AUTO_MODE` (boolean: `True` = AI, `False` = controller) and all pins, the bit→button map (`CONTROLLER_BITS`), and speed bounds live in [src/embedded/config.py](src/embedded/config.py). Clone wiring varies — run [src/embedded/probe.py](src/embedded/probe.py) on-device (`mpremote`), press each button, and re-map `CONTROLLER_BITS` from the printed bit indices. DATA uses an internal pull-up so an unwired/idle line reads "released" — no spurious input in auto mode.
 - The sim swaps in [src/sim/fake_controller.py](src/sim/fake_controller.py) via `sys.modules["controller"]` (like `fake_machine`/`fake_neopixel`), mapping keys to buttons: arrows = D-pad, Enter = START, Right-Shift = SELECT, Z = A, X = B. So `uv run python src/sim/main.py` tests manual mode on a laptop.
 
 ### Checkpoints and logs

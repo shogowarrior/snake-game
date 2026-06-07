@@ -25,9 +25,9 @@ FOOD_BLINK = True
 # Frames per food blink cycle (resets each food). Keep small — food is eaten in ~10 moves, so larger never completes.
 FOOD_BLINK_FRAMES = 4
 
-# Control mode at boot: "auto" runs the AI policy, "manual" reads the controller D-pad.
+# Control mode at boot: True runs the AI policy, False reads the controller D-pad.
 # SELECT toggles between them live.
-CONTROL_MODE = "auto"  # "auto" | "manual"
+AUTO_MODE = True  # True | False
 
 # Famicom/NES controller (4021 shift register). Keep clear of NEOPIXEL_PIN (13).
 CONTROLLER_LATCH = 18
@@ -50,3 +50,6 @@ CONTROLLER_BITS = {
 SPEED_STEP = 5
 SPEED_MIN = 5
 SPEED_MAX = 60
+
+# Holding a D-pad direction (manual mode) multiplies tick rate by this for a momentary rush.
+RUSH_MULTIPLIER = 2
