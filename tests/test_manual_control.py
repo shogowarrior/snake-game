@@ -89,6 +89,20 @@ def test_rush_stops_after_release():
     assert _palette_speed(g) == 20
 
 
+def test_rush_reflects_same_tick_speed_change():
+    g = _game([({"A"}, {"UP"})], speed=20)  # speed-up + held direction same tick
+    g.tick()
+    assert g.state.speed == 20 + game.SPEED_STEP
+    assert _palette_speed(g) == (20 + game.SPEED_STEP) * game.RUSH_MULTIPLIER
+
+
+def test_reversed_direction_still_rushes_in_current_heading():
+    g = _game([(set(), {"LEFT"})], speed=20)  # engine starts heading RIGHT
+    g.tick()
+    assert g.engine.direction == Direction.RIGHT  # 180 reversal rejected
+    assert _palette_speed(g) == 20 * game.RUSH_MULTIPLIER  # but holding still rushes
+
+
 def test_manual_reset_preserves_high_score(monkeypatch):
     saved = []
     monkeypatch.setattr(game, "load_high_score", lambda: 3)
