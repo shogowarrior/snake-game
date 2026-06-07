@@ -18,10 +18,11 @@ SRC = Path(__file__).resolve().parent.parent  # .../src
 sys.path.insert(0, str(SRC))  # common, sim
 sys.path.insert(0, str(SRC / "embedded"))  # flat embedded imports
 
-from sim import fake_machine, fake_neopixel  # noqa: E402
+from sim import fake_controller, fake_machine, fake_neopixel  # noqa: E402
 
 sys.modules["machine"] = fake_machine
 sys.modules["neopixel"] = fake_neopixel
+sys.modules["controller"] = fake_controller
 
 # Importing embedded/main.py runs run_game() at top level — exactly as on-device.
 import main  # noqa: E402, F401

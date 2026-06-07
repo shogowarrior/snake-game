@@ -5,7 +5,7 @@ description = "Snake with a DQN agent (desktop) and a NeoPixel build (ESP32)."
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "torch",
-    "pygame",
+    "pygame-ce",
     "matplotlib",
     "numpy",
     "pandas",

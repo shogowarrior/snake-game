@@ -3,7 +3,6 @@ from time import sleep
 import neopixel  # type: ignore
 from config import (
     BRIGHTNESS,
-    FOOD_HEARTBEAT,
     NEOPIXEL_PIN,
     ROTATION,
 )
@@ -49,26 +48,6 @@ def _compute_lut(rotation):
             np_index = px * 16 + (py if px % 2 == 0 else 15 - py)
             lut[y * 16 + x] = np_index
     return lut
-
-
-def _heartbeat_factor(frame, speed):
-    """Lub-dub-rest envelope returning a brightness multiplier in [0.25, 1.0].
-
-    One cycle spans roughly `speed` frames (≈ 1 second of wall time at the
-    engine's current tick rate). The two pulses sit inside the first ~30% of
-    the cycle; the remainder is the resting baseline.
-    """
-    cycle = speed if speed > 0 else 1
-    t = (frame % cycle) / cycle
-    if t < 0.05:
-        return 0.25 + (1.00 - 0.25) * (t / 0.05)
-    if t < 0.10:
-        return 1.00 - (1.00 - 0.25) * ((t - 0.05) / 0.05)
-    if t < 0.18:
-        return 0.25 + (0.80 - 0.25) * ((t - 0.10) / 0.08)
-    if t < 0.26:
-        return 0.80 - (0.80 - 0.25) * ((t - 0.18) / 0.08)
-    return 0.25
 
 
 class Display:
@@ -193,14 +172,9 @@ class Display:
         for i, (x, y) in enumerate(engine.snake):
             self.set_pixel(x, y, self._gradient_colors[i])
 
-        # Food pixel — optionally pulsed like a heartbeat (phase from engine.frame).
+        # Food pixel — palette already carries the blink fade + color (see game.py).
         fx, fy = engine.food
-        if FOOD_HEARTBEAT:
-            f = _heartbeat_factor(engine.frame, speed)
-            fr, fg, fb = food_color
-            self.set_pixel(fx, fy, (int(fr * f), int(fg * f), int(fb * f)))
-        else:
-            self.set_pixel(fx, fy, food_color)
+        self.set_pixel(fx, fy, food_color)
 
         self.flush()
         self._prev_snake_cells = cur

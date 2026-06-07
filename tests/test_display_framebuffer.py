@@ -1,8 +1,8 @@
 """Framebuffer primitives — pixel writes, clear, layout.
 
 Each test that touches mutable state uses a fresh `Display` instance via the
-`d` fixture. Module-level helpers (`_compute_lut`, `FOOD_HEARTBEAT`) are still
-referenced through the `display` module.
+`d` fixture. Module-level helpers (`_compute_lut`) are still referenced through
+the `display` module.
 """
 
 import display
@@ -238,10 +238,7 @@ class _FakeEngine:
         self.frame = frame
 
 
-def test_draw_snake_writes_snake_cells_and_food_to_fb(d, monkeypatch):
-    # Disable the heartbeat pulse so the food color is exactly the palette color.
-    monkeypatch.setattr(display, "FOOD_HEARTBEAT", False)
-
+def test_draw_snake_writes_snake_cells_and_food_to_fb(d):
     engine = _FakeEngine(snake=[(5, 5), (5, 6), (5, 7)], food=(10, 10))
     palette = ((255, 0, 0), (0, 0, 64), (0, 255, 0), 1000)
     # speed=1000 so the sleep is ~1ms; doesn't matter for the framebuffer test.
@@ -256,9 +253,7 @@ def test_draw_snake_writes_snake_cells_and_food_to_fb(d, monkeypatch):
     assert d._fb[fy * 16 + fx] == (0, 255, 0)
 
 
-def test_draw_snake_clears_vacated_cells_in_fb(d, monkeypatch):
-    monkeypatch.setattr(display, "FOOD_HEARTBEAT", False)
-
+def test_draw_snake_clears_vacated_cells_in_fb(d):
     # First frame: snake at A.
     e1 = _FakeEngine(snake=[(5, 5), (5, 6)], food=(10, 10))
     d.draw_snake(e1, ((255, 0, 0), (0, 0, 64), (0, 255, 0), 1000))
