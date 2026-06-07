@@ -22,6 +22,9 @@ from sim import fake_machine, fake_neopixel  # noqa: E402
 sys.modules["machine"] = fake_machine
 sys.modules["neopixel"] = fake_neopixel
 
+# Tests skip the sim's device-cadence delay; it would add 49ms to every flush.
+fake_neopixel.DEVICE_OVERHEAD_MS = 0
+
 # Headless: don't open a pygame window during tests.
 from sim import screen  # noqa: E402
 

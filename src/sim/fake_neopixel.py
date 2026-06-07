@@ -1,4 +1,9 @@
+import time
+
 from sim import screen
+
+# ESP32 spends ~49 ms/frame on MicroPython compute + LED write the host doesn't; emulate it so the sim runs at device cadence.
+DEVICE_OVERHEAD_MS = 49
 
 
 class NeoPixel:
@@ -23,4 +28,5 @@ class NeoPixel:
             self.buf[i] = c
 
     def write(self):
+        time.sleep(DEVICE_OVERHEAD_MS / 1000)
         screen.flush(self.buf)
